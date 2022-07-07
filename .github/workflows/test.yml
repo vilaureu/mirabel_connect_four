@@ -1,0 +1,84 @@
+name: Test
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: ubuntu-latest
+    outputs:
+      surena_game-ref: ${{ steps.get-surena_game-ref.outputs.ref }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Get surena_game_rs ref
+        id: get-surena_game-ref
+        # find out surena_game_rs revision for later checkout
+        run: >-
+          echo "::set-output name=ref::$(cat Cargo.toml | sed -n
+          's/^ *surena_game.*rev *= *"\([^" ]*\)".*$/\1/p')"
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+      - name: Build
+        run: cargo build --verbose
+      - uses: actions/upload-artifact@v3
+        with:
+          name: surena_connect_four
+          path: target/debug/libsurena_connect_four.so
+      - name: Test
+        timeout-minutes: 5
+        run: cargo test --verbose
+      - name: Clippy
+        run: cargo clippy --no-deps -- --deny=warnings
+
+  surena:
+    name: Surena integration test
+    runs-on: ubuntu-latest
+    needs: build
+    if: ${{ always() }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          repository: vilaureu/surena_game_rs
+          ref: ${{ needs.build.outputs.surena_game-ref }}
+          submodules: recursive
+      - name: Get surena commit
+        id: get-surena
+        # purge cache on submodule update
+        run: echo "::set-output name=commit::$(git rev-parse HEAD)"
+        working-directory: surena
+      - uses: actions/cache@v3
+        with:
+          path: surena/build/
+          key: ${{ runner.os }}-surena-${{ steps.get-surena.outputs.commit }}
+      - uses: actions/download-artifact@v3
+        with:
+          name: surena_connect_four
+      - name: Make libsurena_connect_four.so executable
+        run: chmod +x libsurena_connect_four.so
+      - name: Configure
+        # GCC-9 crashes when compiling surena
+        run: >-
+          cmake -S surena -B surena/build -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_C_COMPILER=/usr/bin/gcc-10
+          -DCMAKE_CXX_COMPILER=/usr/bin/g++-10
+      - name: Build
+        run: cmake --build surena/build
+      - name: Test
+        timeout-minutes: 5
+        run: >-
+          echo -e "0\n1\ninvalid\n1\n10\n2\n2\n3" | ./surena/build/surena
+          --game-plugin ./libsurena_connect_four.so --game-options 4x3@3
