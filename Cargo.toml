@@ -8,8 +8,9 @@ publish = false
 [lib]
 crate-type = ["cdylib"]
 
-[dependencies]
-surena_game = { git = "https://github.com/vilaureu/surena_game_rs", rev = "e4c7f904fa1d6d7da947474bda8dec0d5530ab57" }
+[dependencies.surena_game]
+git = "https://github.com/vilaureu/surena_game_rs"
+rev = "16af08015b27c92b6825886922ffd365f0877ed3"
 
 [profile.release]
 panic = "abort"

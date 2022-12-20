@@ -14,15 +14,9 @@ jobs:
     name: Build and test
     runs-on: ubuntu-latest
     outputs:
-      surena_game-ref: ${{ steps.get-surena_game-ref.outputs.ref }}
+      mirabel_sys: ${{ steps.mirabel_sys.outputs.rev }}
     steps:
       - uses: actions/checkout@v3
-      - name: Get surena_game_rs ref
-        id: get-surena_game-ref
-        # find out surena_game_rs revision for later checkout
-        run: >-
-          echo "::set-output name=ref::$(cat Cargo.toml | sed -n
-          's/^ *surena_game.*rev *= *"\([^" ]*\)".*$/\1/p')"
       - uses: actions/cache@v3
         with:
           path: |
@@ -38,6 +32,14 @@ jobs:
         with:
           name: surena_connect_four
           path: target/debug/libsurena_connect_four.so
+      - name: Install cargo-lock
+        run: cargo install cargo-lock --version=8.0.3 --features=cli
+      # find out mirabel_sys commit hash via cargo-lock
+      - name: Get mirabel_sys revision
+        id: mirabel_sys
+        run: >-
+          echo "rev=$(cargo lock --sources --package mirabel_sys | sed -rn
+          's/^.+rev=([a-f0-9]+)#\1\)$/\1/p')" >> $GITHUB_OUTPUT
       - name: Test
         timeout-minutes: 5
         run: cargo test --verbose
@@ -52,17 +54,17 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          repository: vilaureu/surena_game_rs
-          ref: ${{ needs.build.outputs.surena_game-ref }}
+          repository: vilaureu/mirabel_sys
+          ref: ${{ needs.build.outputs.mirabel_sys }}
           submodules: recursive
       - name: Get surena commit
         id: get-surena
         # purge cache on submodule update
-        run: echo "::set-output name=commit::$(git rev-parse HEAD)"
-        working-directory: surena
+        run: echo "commit=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+        working-directory: mirabel/lib/surena
       - uses: actions/cache@v3
         with:
-          path: surena/build/
+          path: build/
           key: ${{ runner.os }}-surena-${{ steps.get-surena.outputs.commit }}
       - uses: actions/download-artifact@v3
         with:
@@ -72,13 +74,13 @@ jobs:
       - name: Configure
         # GCC-9 crashes when compiling surena
         run: >-
-          cmake -S surena -B surena/build -DCMAKE_BUILD_TYPE=Debug
+          cmake -S mirabel/lib/surena -B build -DCMAKE_BUILD_TYPE=Debug
           -DCMAKE_C_COMPILER=/usr/bin/gcc-10
           -DCMAKE_CXX_COMPILER=/usr/bin/g++-10
       - name: Build
-        run: cmake --build surena/build
+        run: cmake --build build
       - name: Test
         timeout-minutes: 5
         run: >-
-          echo -e "0\n1\ninvalid\n1\n10\n2\n2\n3" | ./surena/build/surena
+          echo -e "0\n1\ninvalid\n1\n10\n2\n2\n3" | ./build/surena
           --game-plugin ./libsurena_connect_four.so --game-options 4x3@3

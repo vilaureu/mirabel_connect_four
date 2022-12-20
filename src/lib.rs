@@ -4,6 +4,7 @@ mod bitvec;
 
 use std::fmt::{self, Display, Write};
 use std::ops::Index;
+use std::str::FromStr;
 
 use bitvec::BitVec;
 use surena_game::{
@@ -12,6 +13,7 @@ use surena_game::{
     ErrorCode::{InvalidInput, InvalidOptions},
     GameMethods, Metadata, PtrVec, Result, StrBuf,
 };
+use surena_game::{ErrorCode, GameInit};
 
 const DEFAULT_WIDTH: u8 = 7;
 const DEFAULT_HEIGHT: u8 = 6;
@@ -24,9 +26,9 @@ fn connect_four() -> game_methods {
     features.set_options(true);
 
     create_game_methods::<ConnectFour>(Metadata {
-        game_name: cstr(b"Connect_Four\0"),
-        variant_name: cstr(b"Classic\0"),
-        impl_name: cstr(b"2-bitviktor\0"),
+        game_name: cstr("Connect_Four\0"),
+        variant_name: cstr("Classic\0"),
+        impl_name: cstr("2-bitviktor\0"),
         version: semver {
             major: 0,
             minor: 1,
@@ -79,71 +81,50 @@ impl ConnectFour {
 }
 
 impl GameMethods for ConnectFour {
-    /// Imports options in the following format: `7x6@4`.
+    /// Creates a new instance of the game and a corresponding [`buf_sizer`].
     ///
-    /// The option string consists of three separated numbers with the meaning
-    /// of column count, row count, and minimum number of connected pieces for
-    /// winning.
-    fn create_with_opts_str(string: &str) -> Result<(Self, buf_sizer)> {
-        fn parse(name: &str, string: Option<&str>) -> Result<u8> {
-            string
-                .ok_or_else(|| Error::new_dynamic(InvalidInput, format!("missing {name}")))?
-                .parse()
-                .map_err(|e| {
-                    Error::new_dynamic(InvalidInput, format!("failed to parse {name}: {e}"))
-                })
-        }
-
-        let mut numbers = string.trim().split(|c: char| !c.is_ascii_digit());
-        let width = parse("width", numbers.next())?;
-        let height = parse("height", numbers.next())?;
-        let length = parse("length", numbers.next())?;
-        if let Some(excess) = numbers.next() {
-            return Err(Error::new_dynamic(
-                InvalidInput,
-                format!(r#"unexpected "{excess}" after options"#),
-            ));
-        }
-
-        if width < 1 || height < 1 || length < 1 {
-            return Err(Error::new_static(
-                InvalidOptions,
-                b"width, height, and length need to be at least 1\0",
-            ));
+    /// See [`GameOptions::new()`] for a documentation of the options string.
+    /// See [`Self::import_state()`] for a documentation of the state string.
+    /// Serialized `init_info` is not supported.
+    fn create(init_info: &GameInit) -> Result<(Self, buf_sizer)> {
+        let (options, state) = match *init_info {
+            GameInit::Default => (None, None),
+            GameInit::Standard {
+                opts,
+                legacy,
+                state,
+            } => {
+                if legacy.is_some() {
+                    return Err(Error::new_static(
+                        ErrorCode::InvalidLegacy,
+                        "unexpected legacy\0",
+                    ));
+                }
+                (opts, state)
+            }
+            GameInit::Serialized(_) => {
+                return Err(Error::new_static(
+                    ErrorCode::FeatureUnsupported,
+                    "serialized init info unsupported\0",
+                ))
+            }
         };
-        if length > width && length > height {
-            return Err(Error::new_static(
-                InvalidOptions,
-                b"length must not exceed both width and height\0",
-            ));
-        }
 
-        let options = GameOptions {
-            width,
-            height,
-            length,
-        };
+        let options = options
+            .map(GameOptions::new)
+            .transpose()?
+            .unwrap_or_default();
         let sizer = options.sizer();
-        let game = Self {
+        let mut game = Self {
             options,
             data: GameData::new(&options),
         };
+        game.import_state(state)?;
 
         Ok((game, sizer))
     }
 
-    fn create_default() -> Result<(Self, buf_sizer)> {
-        let options = GameOptions::default();
-        let sizer = options.sizer();
-        let game = Self {
-            options,
-            data: GameData::new(&options),
-        };
-
-        Ok((game, sizer))
-    }
-
-    fn export_options_str(&mut self, str_buf: &mut StrBuf) -> Result<()> {
+    fn export_options(&mut self, str_buf: &mut StrBuf) -> Result<()> {
         write!(
             str_buf,
             "{} {} {}",
@@ -198,17 +179,14 @@ impl GameMethods for ConnectFour {
                 if pos.0 >= self.options.width {
                     return Err(Error::new_static(
                         InvalidInput,
-                        b"state has too many columns\0",
+                        "state has too many columns\0",
                     ));
                 }
                 continue;
             }
 
             if pos.1 >= self.options.height {
-                return Err(Error::new_static(
-                    InvalidInput,
-                    b"state has too many rows\0",
-                ));
+                return Err(Error::new_static(InvalidInput, "state has too many rows\0"));
             }
 
             self.set(
@@ -390,23 +368,23 @@ impl GameMethods for ConnectFour {
         assert_eq!(0, move_code::MIN);
 
         if mov >= self.options.width.into() {
-            return Err(Error::new_static(InvalidInput, b"column does not exist\0"));
+            return Err(Error::new_static(InvalidInput, "column does not exist\0"));
         }
         if self.data.result.is_over() {
-            return Err(Error::new_static(InvalidInput, b"game is already over\0"));
+            return Err(Error::new_static(InvalidInput, "game is already over\0"));
         }
         if self.data.turn != player_from_id(player) {
-            return Err(Error::new_static(InvalidInput, b"not this player's turn\0"));
+            return Err(Error::new_static(InvalidInput, "not this player's turn\0"));
         }
 
         if let State::Empty = self[(mov as u8, self.options.height - 1)] {
             Ok(())
         } else {
-            Err(Error::new_static(InvalidInput, b"column full\0"))
+            Err(Error::new_static(InvalidInput, "column full\0"))
         }
     }
 
-    fn debug_print(&mut self, str_buf: &mut StrBuf) -> Result<()> {
+    fn print(&mut self, str_buf: &mut StrBuf) -> Result<()> {
         const ERROR: &str = "writing debug-print buffer failed";
         let col_chars = self.options.col_chars();
 
@@ -602,6 +580,43 @@ struct GameOptions {
 }
 
 impl GameOptions {
+    /// Create a new instance of game options from an option string.
+    ///
+    /// Accepts options in the following format: `7x6@4`.
+    /// The option string consists of three separate numbers: the column count,
+    /// the row count, and the minimum number of connected pieces for winning.
+    fn new(options: &str) -> Result<Self> {
+        let mut numbers = options.trim().split(|c: char| !c.is_ascii_digit());
+        let width = parse("width", numbers.next())?;
+        let height = parse("height", numbers.next())?;
+        let length = parse("length", numbers.next())?;
+        if let Some(excess) = numbers.next() {
+            return Err(Error::new_dynamic(
+                InvalidInput,
+                format!(r#"unexpected "{excess}" after options"#),
+            ));
+        }
+
+        if width < 1 || height < 1 || length < 1 {
+            return Err(Error::new_static(
+                InvalidOptions,
+                "width, height, and length need to be at least 1\0",
+            ));
+        };
+        if length > width && length > height {
+            return Err(Error::new_static(
+                InvalidOptions,
+                "length must not exceed both width and height\0",
+            ));
+        }
+
+        Ok(Self {
+            width,
+            height,
+            length,
+        })
+    }
+
     /// Calculate the [`buf_sizer`].
     fn sizer(&self) -> buf_sizer {
         // Calculations might overflow with only 16 bits.
@@ -616,12 +631,12 @@ impl GameOptions {
             player_count: 2,
             max_players_to_move: 1,
             max_moves: self.width.into(),
-            max_actions: 0,
             max_results: 1,
             move_str: self.col_chars() + 1,
             print_str: ((self.col_chars() + 1) * usize::from(self.width) + 2)
                 * (usize::from(self.height) + 1)
                 + 1,
+            ..Default::default()
         }
     }
 
@@ -733,6 +748,21 @@ const fn digits(mut n: u8) -> usize {
     }
 }
 
+/// Parse the supplied `string`.
+///
+/// # Errors
+/// Creates a descriptive error message using `name` if `string` is [`None`] or
+/// failed to parse.
+fn parse<D: FromStr>(name: &str, string: Option<&str>) -> Result<D>
+where
+    <D as FromStr>::Err: Display,
+{
+    string
+        .ok_or_else(|| Error::new_dynamic(InvalidInput, format!("missing {name}")))?
+        .parse()
+        .map_err(|e| Error::new_dynamic(InvalidInput, format!("failed to parse {name}: {e}")))
+}
+
 #[cfg(target_pointer_width = "16")]
 const ERROR: () = "16 bit architectures are not supported.";
 
@@ -764,17 +794,19 @@ mod tests {
     }
 
     #[test]
-    fn create_default() {
-        let (game, sizer) = ConnectFour::create_default().unwrap();
+    fn create() {
+        let (game, sizer) = ConnectFour::create(&GameInit::Default).unwrap();
         assert_eq!(DEFAULT_WIDTH, game.options.width);
         assert_eq!(DEFAULT_HEIGHT, game.options.height);
         assert_eq!(DEFAULT_LENGTH, game.options.length);
         assert_eq!(game.options.sizer(), sizer);
-    }
 
-    #[test]
-    fn create_with_opts_str() {
-        let (game, sizer) = ConnectFour::create_with_opts_str("4x3@2").unwrap();
+        let (game, sizer) = ConnectFour::create(&GameInit::Standard {
+            opts: Some("4x3@2"),
+            legacy: None,
+            state: None,
+        })
+        .unwrap();
 
         assert_eq!(4, game.options.width);
         assert_eq!(3, game.options.height);
@@ -782,7 +814,13 @@ mod tests {
         assert_eq!(game.options.sizer(), sizer);
 
         fn create(string: &str) -> ErrorCode {
-            ConnectFour::create_with_opts_str(string).unwrap_err().code
+            ConnectFour::create(&GameInit::Standard {
+                opts: Some(string),
+                legacy: None,
+                state: None,
+            })
+            .unwrap_err()
+            .code
         }
         assert_eq!(InvalidInput, create(""));
         assert_eq!(InvalidInput, create("7x4"));
@@ -793,7 +831,7 @@ mod tests {
 
     #[test]
     fn import_state() {
-        let mut game = create_and_import("XO/O/////X#O");
+        let mut game = create_with_state("XO/O/////X#O");
         assert!(game.data.turn);
         assert_eq!(GameResult::Winner, game.data.result);
         assert_eq!(State::X, game[(0, 0)]);
@@ -828,8 +866,8 @@ mod tests {
 
     #[test]
     fn copy_from() {
-        let mut a = create_and_import("O/X#X");
-        let mut b = create_and_import("O/X#o");
+        let mut a = create_with_state("O/X#X");
+        let mut b = create_with_state("O/X#o");
 
         b.copy_from(&mut a).unwrap();
         assert_eq!(a, b);
@@ -837,7 +875,7 @@ mod tests {
 
     #[test]
     fn export_state() {
-        let mut game = create_and_import("X/OOxO//X#O");
+        let mut game = create_with_state("X/OOxO//X#O");
 
         let expected = "X/OOXO//X///#O";
         let mut storage = Storage::new(expected.len());
@@ -848,7 +886,7 @@ mod tests {
 
     #[test]
     fn players_to_move() {
-        let mut game = create();
+        let mut game = create_default();
 
         let mut storage = Storage::new(1);
         game.players_to_move(&mut storage.get_ptr_vec()).unwrap();
@@ -869,7 +907,7 @@ mod tests {
 
     #[test]
     fn get_concrete_moves() {
-        let mut game = create_and_import("//XOXOXO//#o");
+        let mut game = create_with_state("//XOXOXO//#o");
 
         let mut storage = Storage::new(DEFAULT_WIDTH.into());
         game.get_concrete_moves(1, &mut storage.get_ptr_vec())
@@ -894,7 +932,7 @@ mod tests {
 
     #[test]
     fn is_legal_move() {
-        let mut game = create_and_import("/OXOOXO/#o");
+        let mut game = create_with_state("/OXOOXO/#o");
 
         let err = game.is_legal_move(1, 0).unwrap_err().code;
         assert_eq!(InvalidInput, err);
@@ -920,7 +958,7 @@ mod tests {
 
     #[test]
     fn make_move() {
-        let mut game = create_and_import("/OOO/#x");
+        let mut game = create_with_state("/OOO/#x");
 
         game.make_move(1, 0).unwrap();
         game.make_move(2, 1).unwrap();
@@ -938,7 +976,7 @@ mod tests {
 
     #[test]
     fn get_results() {
-        let mut game = create_and_import("/OXO/#x");
+        let mut game = create_with_state("/OXO/#x");
 
         let mut storage = Storage::new(1);
         game.get_results(&mut storage.get_ptr_vec()).unwrap();
@@ -955,7 +993,7 @@ mod tests {
 
     #[test]
     fn get_move_code() {
-        let mut game = create();
+        let mut game = create_default();
 
         let mov = game.get_move_code(PLAYER_NONE, " 4 ").unwrap();
         assert_eq!(4, mov);
@@ -966,7 +1004,7 @@ mod tests {
 
     #[test]
     fn get_move_str() {
-        let mut game = create();
+        let mut game = create_default();
 
         let mut storage = Storage::new(1);
         game.get_move_str(PLAYER_NONE, 3, &mut storage.get_ptr_vec())
@@ -976,7 +1014,7 @@ mod tests {
 
     #[test]
     fn debug_print() {
-        let mut game = create_and_import("x/o/xoxoxo//x/#x");
+        let mut game = create_with_state("x/o/xoxoxo//x/#x");
 
         let expected = concat!(
             "| | |O| | | | |\n",
@@ -988,20 +1026,22 @@ mod tests {
             " 0 1 2 3 4 5 6 \n",
         );
         let mut storage = Storage::new(expected.len());
-        game.debug_print(&mut storage.get_ptr_vec()).unwrap();
+        game.print(&mut storage.get_ptr_vec()).unwrap();
 
         assert_eq!(expected, storage.as_str().unwrap());
     }
 
-    fn create() -> ConnectFour {
-        let (mut game, _) = ConnectFour::create_default().unwrap();
-        game.import_state(None).unwrap();
-        return game;
+    fn create_default() -> ConnectFour {
+        ConnectFour::create(&GameInit::Default).unwrap().0
     }
 
-    fn create_and_import(string: &str) -> ConnectFour {
-        let (mut game, _) = ConnectFour::create_default().unwrap();
-        game.import_state(Some(string)).unwrap();
-        return game;
+    fn create_with_state(string: &str) -> ConnectFour {
+        ConnectFour::create(&GameInit::Standard {
+            opts: None,
+            legacy: None,
+            state: Some(string),
+        })
+        .unwrap()
+        .0
     }
 }
