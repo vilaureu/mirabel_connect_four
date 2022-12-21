@@ -385,12 +385,12 @@ impl GameMethods for ConnectFour {
     }
 
     fn print(&mut self, str_buf: &mut StrBuf) -> Result<()> {
-        const ERROR: &str = "writing debug-print buffer failed";
+        const ERROR: &str = "writing print buffer failed";
         let col_chars = self.options.col_chars();
 
         for y in (0..self.options.height).rev() {
             for state in self.iter((0, y), Direction::E) {
-                write!(str_buf, "|{state:>col_chars$}").expect(ERROR);
+                write!(str_buf, "|{state:col_chars$}").expect(ERROR);
             }
             writeln!(str_buf, "|").expect(ERROR);
         }
@@ -454,7 +454,10 @@ impl Display for State {
             Self::X => 'X',
             Self::O => 'O',
         };
-        write!(f, "{c}")
+        for _ in 0..f.width().unwrap_or(1) {
+            write!(f, "{c}")?;
+        }
+        Ok(())
     }
 }
 
@@ -1013,7 +1016,7 @@ mod tests {
     }
 
     #[test]
-    fn debug_print() {
+    fn print() {
         let mut game = create_with_state("x/o/xoxoxo//x/#x");
 
         let expected = concat!(
