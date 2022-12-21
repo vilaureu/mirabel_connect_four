@@ -64,9 +64,13 @@ jobs:
         run: echo "commit=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
         working-directory: mirabel/lib/surena
       - uses: actions/cache@v3
+        id: cache
         with:
           path: build/
           key: ${{ runner.os }}-surena-${{ steps.get-surena.outputs.commit }}
+      - name: Touch build to prevent CMake from recompiling
+        if: steps.cache.outputs.cache-hit == 'true'
+        run: find build -exec touch {} +
       - uses: actions/download-artifact@v3
         with:
           name: surena_connect_four
