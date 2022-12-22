@@ -1,5 +1,5 @@
 [package]
-name = "surena_connect_four"
+name = "mirabel_connect_four"
 authors = ["vilaureu"]
 version = "0.1.0"
 edition = "2021"
@@ -8,9 +8,18 @@ publish = false
 [lib]
 crate-type = ["cdylib"]
 
+[features]
+default = ["mirabel"]
+mirabel = ["dep:mirabel"]
+
 [dependencies.surena_game]
 git = "https://github.com/vilaureu/surena_game_rs"
 rev = "16af08015b27c92b6825886922ffd365f0877ed3"
+
+[dependencies.mirabel]
+git = "https://github.com/vilaureu/mirabel_rs"
+rev = "b3c55bb5bd409121860c09b9a3419aac8920797f"
+optional = true
 
 [profile.release]
 panic = "abort"

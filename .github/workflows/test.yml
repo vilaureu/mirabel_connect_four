@@ -31,8 +31,8 @@ jobs:
         run: cargo build --verbose
       - uses: actions/upload-artifact@v3
         with:
-          name: surena_connect_four
-          path: target/debug/libsurena_connect_four.so
+          name: mirabel_connect_four
+          path: target/debug/libmirabel_connect_four.so
       - name: Install cargo-lock
         run: cargo install cargo-lock --version=8.0.3 --features=cli
       # find out mirabel_sys commit hash via cargo-lock
@@ -73,9 +73,9 @@ jobs:
         run: find build -exec touch {} +
       - uses: actions/download-artifact@v3
         with:
-          name: surena_connect_four
-      - name: Make libsurena_connect_four.so executable
-        run: chmod +x libsurena_connect_four.so
+          name: mirabel_connect_four
+      - name: Make libmirabel_connect_four.so executable
+        run: chmod +x libmirabel_connect_four.so
       - name: Configure
         # GCC-9 crashes when compiling surena
         run: >-
@@ -88,4 +88,4 @@ jobs:
         timeout-minutes: 5
         run: >-
           echo -e "0\n1\ninvalid\n1\n10\n2\n2\n3" | ./build/surena
-          --game-plugin ./libsurena_connect_four.so --game-options 4x3@3
+          --game-plugin ./libmirabel_connect_four.so --game-options 4x3@3

@@ -1,7 +1,8 @@
-# Connect Four for Surena
+# Connect Four for Mirabel/Surena
 
 This is an implementation of the _Connect Four_ game for the
-[_surena_](https://github.com/RememberOfLife/surena/) game engine.
+[_surena_](https://github.com/RememberOfLife/surena) game engine and the
+[_mirabel_](https://github.com/RememberOfLife/mirabel) game GUI.
 
 ## Building
 
@@ -13,22 +14,25 @@ This is an implementation of the _Connect Four_ game for the
    ```
    $ cargo build --release
    ```
-3. Locate the plugin at `./target/release/libsurena_connect_four.so`
+3. Locate the plugin at `./target/release/libmirabel_connect_four.so`
 
 ## Running
 
+Using _surena_:
 ```
-$ surena --game-plugin ./libsurena_connect_four.so
+$ surena --game-plugin ./libmirabel_connect_four.so
 ```
 
-## Options
+Or by loading the plugin into _mirabel_ using the plugin manager.
+
+## Options for the Game Plugin
 
 Imports options in the following format: `7x6@4`.
 
 The option string consists of three separated numbers with the meaning of
 column count, row count, and minimum number of connected pieces for winning.
 
-## State
+## State Format Used by the Game Plugin
 
 Imports state in the following format: `XOOXXXO/XOOX//OXXO#x`.
 
@@ -49,8 +53,8 @@ This project uses the following libraries:
 
 - [_surena_game_rs_](https://github.com/vilaureu/surena_game_rs) under the
   [_MIT License_](https://github.com/vilaureu/surena_game_rs/blob/main/LICENSE)
-- [_surena_](https://github.com/RememberOfLife/surena/) under the
-  [_MIT License_](https://github.com/RememberOfLife/surena/blob/master/LICENSE)
+- [_mirabel_rs_](https://github.com/vilaureu/mirabel_rs) under the
+  [_MIT License_](https://github.com/vilaureu/mirabel_rs/blob/main/LICENSE)
 
 ## License
 
