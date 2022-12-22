@@ -13,6 +13,10 @@ use surena_game::{
 };
 use surena_game::{ErrorCode, GameInit};
 
+pub const GAME_NAME: &str = "Connect_Four\0";
+pub const VARIANT_NAME: &str = "Classic\0";
+pub const IMPL_NAME: &str = "2-bitviktor\0";
+
 const DEFAULT_WIDTH: u8 = 7;
 const DEFAULT_HEIGHT: u8 = 6;
 const DEFAULT_LENGTH: u8 = 4;
@@ -24,9 +28,9 @@ fn connect_four() -> game_methods {
     features.set_options(true);
 
     create_game_methods::<ConnectFour>(Metadata {
-        game_name: cstr("Connect_Four\0"),
-        variant_name: cstr("Classic\0"),
-        impl_name: cstr("2-bitviktor\0"),
+        game_name: cstr(GAME_NAME),
+        variant_name: cstr(VARIANT_NAME),
+        impl_name: cstr(IMPL_NAME),
         version: semver {
             major: 0,
             minor: 1,

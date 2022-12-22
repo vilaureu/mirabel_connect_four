@@ -7,6 +7,8 @@ use mirabel::{
     plugin_get_frontend_methods, semver, ErrorCode,
 };
 
+use crate::game::{GAME_NAME, IMPL_NAME, VARIANT_NAME};
+
 struct Frontend {}
 
 impl FrontendMethods for Frontend {
@@ -47,9 +49,15 @@ impl FrontendMethods for Frontend {
         Ok(())
     }
 
-    fn is_game_compatible(_game: mirabel::frontend::GameInfo) -> mirabel::CodeResult<()> {
-        // TODO
-        Err(ErrorCode::FeatureUnsupported)
+    fn is_game_compatible(game: mirabel::frontend::GameInfo) -> mirabel::CodeResult<()> {
+        if game.game_name == strip_nul(GAME_NAME)
+            && game.impl_name == strip_nul(IMPL_NAME)
+            && game.variant_name == strip_nul(VARIANT_NAME)
+        {
+            Ok(())
+        } else {
+            Err(ErrorCode::FeatureUnsupported)
+        }
     }
 }
 
@@ -67,3 +75,12 @@ fn connect_four() -> frontend_methods {
 }
 
 plugin_get_frontend_methods!(connect_four());
+
+/// Strip NUL character from `s`.
+///
+/// # Panics
+/// Panics if `s` is not NUL-terminated.
+fn strip_nul(s: &str) -> &str {
+    s.strip_suffix('\0')
+        .expect("string slice not NUL-terminated")
+}
