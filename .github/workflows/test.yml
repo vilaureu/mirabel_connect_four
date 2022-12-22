@@ -17,6 +17,10 @@ jobs:
       mirabel_sys: ${{ steps.mirabel_sys.outputs.rev }}
     steps:
       - uses: actions/checkout@v3
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-dev
       - uses: actions/cache@v3
         with:
           path: |
@@ -27,8 +31,8 @@ jobs:
             ~/.cargo/.*
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
-      - name: Build
-        run: cargo build --verbose
+      - name: Build (only for surena)
+        run: cargo build --no-default-features --verbose
       - uses: actions/upload-artifact@v3
         with:
           name: mirabel_connect_four
