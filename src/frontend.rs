@@ -13,14 +13,16 @@ use mirabel::{
 };
 use surena_game::{move_code, player_id, GameInit, GameMethods};
 
-use crate::game::{ConnectFour, GAME_NAME, IMPL_NAME, VARIANT_NAME};
+use crate::game::{ConnectFour, State, GAME_NAME, IMPL_NAME, VARIANT_NAME};
 
 /// Background color.
 const BACKGROUND: Color4f = Color4f::new(201. / 255., 144. / 255., 73. / 255., 1.);
 /// Frame color.
 const FRAME: Color4f = Color4f::new(161. / 255., 119. / 255., 67. / 255., 1.);
-/// Chip color.
-// const CHIP: Color4f = Color4f::new(240. / 255., 217. / 255., 181. / 255., 1.);
+/// Chip color for X.
+const CHIP_X: Color4f = Color4f::new(240. / 255., 217. / 255., 181. / 255., 1.);
+/// Chip color for O.
+const CHIP_O: Color4f = Color4f::new(199. / 255., 36. / 255., 73. / 255., 1.);
 
 /// Width of a frame bar.
 const FRAME_WIDTH: f32 = 0.1;
@@ -94,6 +96,13 @@ impl FrontendMethods for Frontend {
         let Some(ref game) = frontend.frontend.game else {return Ok(());};
         c.concat(&calc_matrix(game, frontend.display_data));
 
+        // Draw chips.
+        let paint_x = &Paint::new(CHIP_X, None);
+        let paint_o = &Paint::new(CHIP_O, None);
+        for (x, y, player) in game.chips() {
+            c.draw_circle((x, y), 0.5, if player { paint_o } else { paint_x });
+        }
+
         // Draw frame.
         let paint = Paint::new(FRAME, None);
         let mut x = -0.5 - 0.5 * FRAME_WIDTH;
@@ -122,6 +131,7 @@ impl FrontendMethods for Frontend {
             );
             y += 1.;
         }
+
         Ok(())
     }
 
@@ -168,6 +178,50 @@ impl Game {
     /// Wrapper around [`GameOptions::height()`].
     fn height(&self) -> u8 {
         self.game.options().height()
+    }
+
+    /// Return iterator over all chips currently on the board.
+    fn chips(&self) -> ChipIter {
+        ChipIter {
+            game: &self.game,
+            x: 0,
+            y: 0,
+        }
+    }
+}
+
+/// Iterator over all chips currently on the board.
+struct ChipIter<'l> {
+    game: &'l ConnectFour,
+    x: u8,
+    y: u8,
+}
+
+impl<'l> Iterator for ChipIter<'l> {
+    /// Has the form: `(x, y, player)`.
+    type Item = (f32, f32, bool);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let width = self.game.options().width();
+        let height = self.game.options().height();
+
+        while self.y < height {
+            let state = self.game[(self.x, self.y)];
+            let result = (self.x.into(), self.y.into());
+
+            self.x += 1;
+            if self.x >= width {
+                self.x = 0;
+                self.y += 1;
+            }
+            return Some(match state {
+                State::Empty => continue,
+                State::X => (result.0, result.1, false),
+                State::O => (result.0, result.1, true),
+            });
+        }
+
+        None
     }
 }
 
