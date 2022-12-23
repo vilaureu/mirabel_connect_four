@@ -53,6 +53,9 @@ jobs:
       - name: Clippy
         if: "!cancelled() && steps.dependencies.outcome == 'success'"
         run: cargo clippy --no-deps -- --deny=warnings
+      - name: Clippy (no default features)
+        if: "!cancelled() && steps.dependencies.outcome == 'success'"
+        run: cargo clippy --no-deps --no-default-features -- --deny=warnings
       - name: Check format
         if: "!cancelled() && steps.checkout.outcome == 'success'"
         run: cargo fmt --check
