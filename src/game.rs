@@ -82,6 +82,7 @@ impl ConnectFour {
     }
 
     /// Provide read-only access to the internal options.
+    #[cfg(feature = "mirabel")]
     pub(crate) fn options(&self) -> &GameOptions {
         &self.options
     }
@@ -662,11 +663,13 @@ impl GameOptions {
     }
 
     /// Width of the board.
+    #[cfg(feature = "mirabel")]
     pub(crate) fn width(&self) -> u8 {
         self.width
     }
 
     /// Height of the board.
+    #[cfg(feature = "mirabel")]
     pub(crate) fn height(&self) -> u8 {
         self.height
     }
