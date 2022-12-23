@@ -3,14 +3,31 @@
 use mirabel::{
     cstr,
     frontend::{
-        create_frontend_methods, frontend_feature_flags, frontend_methods, FrontendMethods,
-        Metadata,
+        create_frontend_methods, frontend_feature_flags, frontend_methods,
+        skia::{Color4f, Matrix, Paint, Rect},
+        FrontendMethods, Metadata,
     },
-    plugin_get_frontend_methods, semver, ErrorCode, Result, ValidCStr,
+    plugin_get_frontend_methods, semver,
+    sys::frontend_display_data,
+    ErrorCode, Result, ValidCStr,
 };
 use surena_game::{move_code, player_id, GameInit, GameMethods};
 
 use crate::game::{ConnectFour, GAME_NAME, IMPL_NAME, VARIANT_NAME};
+
+/// Background color.
+const BACKGROUND: Color4f = Color4f::new(201. / 255., 144. / 255., 73. / 255., 1.);
+/// Frame color.
+const FRAME: Color4f = Color4f::new(161. / 255., 119. / 255., 67. / 255., 1.);
+/// Chip color.
+// const CHIP: Color4f = Color4f::new(240. / 255., 217. / 255., 181. / 255., 1.);
+
+/// Width of a frame bar.
+const FRAME_WIDTH: f32 = 0.1;
+/// Minimum margin around the frame.
+const MARGIN: f32 = 0.1;
+/// Height above the frame from which chips drop.
+const DROP_HEIGHT: f32 = 1.;
 
 /// Container for the state of the frontend.
 #[derive(Default)]
@@ -70,8 +87,41 @@ impl FrontendMethods for Frontend {
         Ok(())
     }
 
-    fn render(_frontend: mirabel::frontend::Wrapped<Self>) -> mirabel::Result<()> {
-        // TODO
+    fn render(mut frontend: mirabel::frontend::Wrapped<Self>) -> mirabel::Result<()> {
+        let c = frontend.canvas.get();
+        c.clear(BACKGROUND);
+
+        let Some(ref game) = frontend.frontend.game else {return Ok(());};
+        c.concat(&calc_matrix(game, frontend.display_data));
+
+        // Draw frame.
+        let paint = Paint::new(FRAME, None);
+        let mut x = -0.5 - 0.5 * FRAME_WIDTH;
+        for _ in 0..=game.width() {
+            c.draw_rect(
+                Rect::from_xywh(
+                    x,
+                    -0.5 - 0.5 * FRAME_WIDTH,
+                    FRAME_WIDTH,
+                    f32::from(game.height()) + FRAME_WIDTH,
+                ),
+                &paint,
+            );
+            x += 1.;
+        }
+        let mut y = -0.5 - 0.5 * FRAME_WIDTH;
+        for _ in 0..=game.height() {
+            c.draw_rect(
+                Rect::from_xywh(
+                    -0.5 - 0.5 * FRAME_WIDTH,
+                    y,
+                    f32::from(game.width()) + FRAME_WIDTH,
+                    FRAME_WIDTH,
+                ),
+                &paint,
+            );
+            y += 1.;
+        }
         Ok(())
     }
 
@@ -109,6 +159,42 @@ impl Game {
     fn make_move(&mut self, player: player_id, mov: move_code) -> Result<()> {
         self.game.make_move(player, mov)
     }
+
+    /// Wrapper around [`GameOptions::width()`].
+    fn width(&self) -> u8 {
+        self.game.options().width()
+    }
+
+    /// Wrapper around [`GameOptions::height()`].
+    fn height(&self) -> u8 {
+        self.game.options().height()
+    }
+}
+
+/// Creates a transformation matrix for easier drawing.
+///
+/// Each cell is 1x1, the origin is in the middle of the bottom-left cell, and
+/// positive directions are up (y) and right (x).
+fn calc_matrix(game: &Game, display_data: &frontend_display_data) -> Matrix {
+    let board_width = f32::from(game.width()) + FRAME_WIDTH + 2. * MARGIN;
+    let board_height = f32::from(game.height()) + FRAME_WIDTH + 2. * MARGIN + DROP_HEIGHT;
+
+    let (scale, tx, ty);
+    if board_width / board_height > display_data.w / display_data.h {
+        scale = display_data.w / board_width;
+        tx = 0.;
+        ty = (display_data.h - scale * board_height) / 2.;
+    } else {
+        scale = display_data.h / board_height;
+        tx = (display_data.w - scale * board_width) / 2.;
+        ty = 0.;
+    }
+
+    let mut matrix = Matrix::translate((tx, display_data.h - ty));
+    matrix.pre_scale((scale, -scale), None);
+    let trans = MARGIN + FRAME_WIDTH + 0.5;
+    matrix.pre_translate((trans, trans));
+    matrix
 }
 
 /// Generate [`frontend_methods`] struct.

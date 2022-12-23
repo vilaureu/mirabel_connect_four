@@ -80,6 +80,11 @@ impl ConnectFour {
             direction,
         }
     }
+
+    /// Provide read-only access to the internal options.
+    pub(crate) fn options(&self) -> &GameOptions {
+        &self.options
+    }
 }
 
 impl GameMethods for ConnectFour {
@@ -577,7 +582,7 @@ impl<'g> Iterator for DirectionIter<'g> {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-struct GameOptions {
+pub(crate) struct GameOptions {
     width: u8,
     height: u8,
     /// The number of successive stones needed for victory.
@@ -654,6 +659,16 @@ impl GameOptions {
             11..=100 => 2,
             101..=u8::MAX => 3,
         }
+    }
+
+    /// Width of the board.
+    pub(crate) fn width(&self) -> u8 {
+        self.width
+    }
+
+    /// Height of the board.
+    pub(crate) fn height(&self) -> u8 {
+        self.height
     }
 }
 
