@@ -86,6 +86,19 @@ impl ConnectFour {
     pub(crate) fn options(&self) -> &GameOptions {
         &self.options
     }
+
+    /// Return who is currently to move.
+    ///
+    /// # Panics
+    /// Panics if the game is over.
+    #[cfg(feature = "mirabel")]
+    pub(crate) fn turn(&self) -> bool {
+        assert!(
+            matches!(self.data.result, GameResult::Ongoing),
+            "game is already over"
+        );
+        self.data.turn
+    }
 }
 
 impl GameMethods for ConnectFour {

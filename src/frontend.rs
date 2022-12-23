@@ -29,13 +29,14 @@ const FRAME_WIDTH: f32 = 0.1;
 /// Minimum margin around the frame.
 const MARGIN: f32 = 0.1;
 /// Height above the frame from which chips drop.
-const DROP_HEIGHT: f32 = 1.;
+const DROP_HEIGHT: f32 = 1.2;
 
 /// Container for the state of the frontend.
 #[derive(Default)]
 struct Frontend {
     /// The currently running game if any.
     game: Option<Game>,
+    input: Input,
 }
 
 impl FrontendMethods for Frontend {
@@ -56,16 +57,18 @@ impl FrontendMethods for Frontend {
     ) -> mirabel::Result<()> {
         match event.to_rust() {
             mirabel::EventEnum::GameLoadMethods(e) => {
-                frontend.game = None;
+                *frontend.frontend = Default::default();
                 frontend.game = Some(Game::create(&e.init_info)?)
             }
-            mirabel::EventEnum::GameUnload(_) => frontend.game = None,
+            mirabel::EventEnum::GameUnload(_) => *frontend.frontend = Default::default(),
             mirabel::EventEnum::GameState(e) => {
+                frontend.input = Default::default();
                 if let Some(ref mut g) = frontend.game {
                     g.import_state(e.state)?;
                 }
             }
             mirabel::EventEnum::GameMove(e) => {
+                frontend.input = Default::default();
                 if let Some(ref mut g) = frontend.game {
                     g.make_move(e.player, e.code)?;
                 }
@@ -77,10 +80,38 @@ impl FrontendMethods for Frontend {
     }
 
     fn process_input(
-        _frontend: mirabel::frontend::Wrapped<Self>,
-        _event: mirabel::SDLEventEnum,
+        frontend: mirabel::frontend::Wrapped<Self>,
+        event: mirabel::SDLEventEnum,
     ) -> mirabel::Result<()> {
-        // TODO
+        let input = &mut frontend.frontend.input;
+        if frontend.frontend.game.is_none() || input.disabled {
+            return Ok(());
+        }
+        let game = frontend.frontend.game.as_ref().unwrap();
+
+        let matrix = calc_matrix(game, frontend.display_data)
+            .invert()
+            .expect("transformation matrix not invertible");
+        match event {
+            mirabel::SDLEventEnum::MouseMotion(e) => {
+                let point = matrix.map_point((e.x, e.y));
+                let rounded = point.x.round();
+                let current = if rounded < 0. || game.width() <= rounded as u8 {
+                    None
+                } else {
+                    Some(rounded as u8)
+                };
+
+                if !input.pressed {
+                    input.selected = current;
+                }
+                input.inside = current == input.selected;
+            }
+            mirabel::SDLEventEnum::MouseButtonDown(_e) => todo!(),
+            mirabel::SDLEventEnum::MouseButtonUp(_e) => todo!(),
+            _ => (),
+        }
+
         Ok(())
     }
 
@@ -93,7 +124,8 @@ impl FrontendMethods for Frontend {
         let c = frontend.canvas.get();
         c.clear(BACKGROUND);
 
-        let Some(ref game) = frontend.frontend.game else {return Ok(());};
+        let fr = frontend.frontend;
+        let Some(ref game) = fr.game else {return Ok(());};
         c.concat(&calc_matrix(game, frontend.display_data));
 
         // Draw chips.
@@ -101,6 +133,16 @@ impl FrontendMethods for Frontend {
         let paint_o = &Paint::new(CHIP_O, None);
         for (x, y, player) in game.chips() {
             c.draw_circle((x, y), 0.5, if player { paint_o } else { paint_x });
+        }
+        // Draw input preview.
+        if let Some(col) = fr.input.selected {
+            if fr.input.inside {
+                c.draw_circle(
+                    (f32::from(col), f32::from(game.height()) - 1. + DROP_HEIGHT),
+                    0.5,
+                    if game.turn() { paint_o } else { paint_x },
+                );
+            }
         }
 
         // Draw frame.
@@ -188,6 +230,11 @@ impl Game {
             y: 0,
         }
     }
+
+    /// Wrapper around [`Game::turn()`].
+    fn turn(&self) -> bool {
+        self.game.turn()
+    }
 }
 
 /// Iterator over all chips currently on the board.
@@ -223,6 +270,15 @@ impl<'l> Iterator for ChipIter<'l> {
 
         None
     }
+}
+
+/// Struct holding data related to user input.
+#[derive(Default)]
+struct Input {
+    selected: Option<u8>,
+    pressed: bool,
+    inside: bool,
+    disabled: bool,
 }
 
 /// Creates a transformation matrix for easier drawing.
