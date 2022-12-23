@@ -44,7 +44,7 @@ plugin_get_game_methods!(connect_four());
 
 /// Struct holding options and game state.
 #[derive(PartialEq, Eq, Clone, Debug)]
-struct ConnectFour {
+pub(crate) struct ConnectFour {
     options: GameOptions,
     data: GameData,
 }
@@ -425,7 +425,7 @@ type Pos = (u8, u8);
 
 /// The state of a single field of the game board.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum State {
+pub(crate) enum State {
     /// No piece at this position
     Empty,
     /// Player 1

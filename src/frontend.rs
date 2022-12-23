@@ -1,21 +1,29 @@
+//! _mirabel_ frontend plugin for _Connect Four_.
+
 use mirabel::{
     cstr,
     frontend::{
         create_frontend_methods, frontend_feature_flags, frontend_methods, FrontendMethods,
         Metadata,
     },
-    plugin_get_frontend_methods, semver, ErrorCode,
+    plugin_get_frontend_methods, semver, ErrorCode, Result, ValidCStr,
 };
+use surena_game::{move_code, player_id, GameInit, GameMethods};
 
-use crate::game::{GAME_NAME, IMPL_NAME, VARIANT_NAME};
+use crate::game::{ConnectFour, GAME_NAME, IMPL_NAME, VARIANT_NAME};
 
-struct Frontend {}
+/// Container for the state of the frontend.
+#[derive(Default)]
+struct Frontend {
+    /// The currently running game if any.
+    game: Option<Game>,
+}
 
 impl FrontendMethods for Frontend {
     type Options = ();
 
     fn create(_options: Option<&Self::Options>) -> mirabel::Result<Self> {
-        Ok(Self {})
+        Ok(Self::default())
     }
 
     fn runtime_opts_display(_frontend: mirabel::frontend::Wrapped<Self>) -> mirabel::Result<()> {
@@ -24,10 +32,28 @@ impl FrontendMethods for Frontend {
     }
 
     fn process_event(
-        _frontend: mirabel::frontend::Wrapped<Self>,
-        _event: mirabel::EventAny,
+        mut frontend: mirabel::frontend::Wrapped<Self>,
+        event: mirabel::EventAny,
     ) -> mirabel::Result<()> {
-        // TODO
+        match event.to_rust() {
+            mirabel::EventEnum::GameLoadMethods(e) => {
+                frontend.game = None;
+                frontend.game = Some(Game::create(&e.init_info)?)
+            }
+            mirabel::EventEnum::GameUnload(_) => frontend.game = None,
+            mirabel::EventEnum::GameState(e) => {
+                if let Some(ref mut g) = frontend.game {
+                    g.import_state(e.state)?;
+                }
+            }
+            mirabel::EventEnum::GameMove(e) => {
+                if let Some(ref mut g) = frontend.game {
+                    g.make_move(e.player, e.code)?;
+                }
+            }
+            _ => (),
+        }
+
         Ok(())
     }
 
@@ -58,6 +84,30 @@ impl FrontendMethods for Frontend {
         } else {
             Err(ErrorCode::FeatureUnsupported)
         }
+    }
+}
+
+/// Intelligent wrapper around a [`ConnectFour`] game.
+struct Game {
+    game: ConnectFour,
+}
+
+impl Game {
+    /// Wrapper around [`ConnectFour::create()`].
+    fn create(init_info: &GameInit) -> Result<Self> {
+        Ok(Self {
+            game: ConnectFour::create(init_info)?.0,
+        })
+    }
+
+    /// Wrapper around [`ConnectFour::import_state()`].
+    fn import_state(&mut self, state: Option<ValidCStr>) -> Result<()> {
+        self.game.import_state(state.map(ValidCStr::into))
+    }
+
+    /// Wrapper around [`ConnectFour::make_move()`].
+    fn make_move(&mut self, player: player_id, mov: move_code) -> Result<()> {
+        self.game.make_move(player, mov)
     }
 }
 
