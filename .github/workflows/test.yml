@@ -51,10 +51,10 @@ jobs:
         timeout-minutes: 5
         run: cargo test --verbose
       - name: Clippy
-        if: !cancelled() && steps.dependencies.outcome == 'success'
+        if: "!cancelled() && steps.dependencies.outcome == 'success'"
         run: cargo clippy --no-deps -- --deny=warnings
       - name: Check format
-        if: !cancelled() && steps.checkout.outcome == 'success'
+        if: "!cancelled() && steps.checkout.outcome == 'success'"
         run: cargo fmt --check
 
   surena:
