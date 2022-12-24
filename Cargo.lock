@@ -209,9 +209,9 @@ checksum = "830d08ce1d1d941e6b30645f1a0eb5643013d835ce3779a5fc208261dbe10f55"
 
 [[package]]
 name = "libc"
-version = "0.2.138"
+version = "0.2.139"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "db6d7e329c562c5dfab7a46a2afabc8b987ab9a4834c9d1ca04dc54c1546cef8"
+checksum = "201de327520df007757c1f0adce6e827fe8562fbc28bfd9c15571c66ca1f5f79"
 
 [[package]]
 name = "libloading"
@@ -256,7 +256,7 @@ dependencies = [
 [[package]]
 name = "mirabel"
 version = "0.1.0"
-source = "git+https://github.com/vilaureu/mirabel_rs?rev=b3c55bb5bd409121860c09b9a3419aac8920797f#b3c55bb5bd409121860c09b9a3419aac8920797f"
+source = "git+https://github.com/vilaureu/mirabel_rs?rev=9f35ecb65f557b7eec3b3d230cf83c9db4ba4634#9f35ecb65f557b7eec3b3d230cf83c9db4ba4634"
 dependencies = [
  "gl_generator",
  "mirabel_sys",
@@ -274,7 +274,7 @@ dependencies = [
 [[package]]
 name = "mirabel_sys"
 version = "0.1.0"
-source = "git+https://github.com/vilaureu/mirabel_sys?rev=204d8e102c4cce316d69eae7e044534a3e7a6f5a#204d8e102c4cce316d69eae7e044534a3e7a6f5a"
+source = "git+https://github.com/vilaureu/mirabel_sys?rev=35ad525d55b6713be2d8633b967158726bbc3d01#35ad525d55b6713be2d8633b967158726bbc3d01"
 dependencies = [
  "bindgen",
  "regex",
@@ -462,7 +462,7 @@ checksum = "6e63cff320ae2c57904679ba7cb63280a3dc4613885beafb148ee7bf9aa9042d"
 [[package]]
 name = "surena_game"
 version = "0.1.0"
-source = "git+https://github.com/vilaureu/surena_game_rs?rev=16af08015b27c92b6825886922ffd365f0877ed3#16af08015b27c92b6825886922ffd365f0877ed3"
+source = "git+https://github.com/vilaureu/surena_game_rs?rev=fc703a3245038014d2d949ef409aac50cdd81027#fc703a3245038014d2d949ef409aac50cdd81027"
 dependencies = [
  "mirabel_sys",
 ]

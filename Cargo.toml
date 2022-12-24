@@ -14,11 +14,11 @@ mirabel = ["dep:mirabel"]
 
 [dependencies.surena_game]
 git = "https://github.com/vilaureu/surena_game_rs"
-rev = "16af08015b27c92b6825886922ffd365f0877ed3"
+rev = "fc703a3245038014d2d949ef409aac50cdd81027"
 
 [dependencies.mirabel]
 git = "https://github.com/vilaureu/mirabel_rs"
-rev = "b3c55bb5bd409121860c09b9a3419aac8920797f"
+rev = "9f35ecb65f557b7eec3b3d230cf83c9db4ba4634"
 optional = true
 
 [profile.release]
