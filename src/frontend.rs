@@ -1,5 +1,7 @@
 //! _mirabel_ frontend plugin for _Connect Four_.
 
+use std::ops::{Deref, DerefMut};
+
 use mirabel::{
     cstr,
     frontend::{
@@ -11,7 +13,7 @@ use mirabel::{
     sys::frontend_display_data,
     ErrorCode, Result, ValidCStr,
 };
-use surena_game::{move_code, player_id, GameInit, GameMethods};
+use surena_game::{GameInit, GameMethods};
 
 use crate::game::{ConnectFour, State, GAME_NAME, IMPL_NAME, VARIANT_NAME};
 
@@ -64,7 +66,7 @@ impl FrontendMethods for Frontend {
             mirabel::EventEnum::GameState(e) => {
                 frontend.input = Default::default();
                 if let Some(ref mut g) = frontend.game {
-                    g.import_state(e.state)?;
+                    g.import_state(e.state.map(ValidCStr::into))?;
                 }
             }
             mirabel::EventEnum::GameMove(e) => {
@@ -189,51 +191,46 @@ impl FrontendMethods for Frontend {
     }
 }
 
-/// Intelligent wrapper around a [`ConnectFour`] game.
-struct Game {
-    game: ConnectFour,
-}
+/// Convenience wrapper around a [`ConnectFour`] game.
+struct Game(ConnectFour);
 
 impl Game {
     /// Wrapper around [`ConnectFour::create()`].
     fn create(init_info: &GameInit) -> Result<Self> {
-        Ok(Self {
-            game: ConnectFour::create(init_info)?.0,
-        })
-    }
-
-    /// Wrapper around [`ConnectFour::import_state()`].
-    fn import_state(&mut self, state: Option<ValidCStr>) -> Result<()> {
-        self.game.import_state(state.map(ValidCStr::into))
-    }
-
-    /// Wrapper around [`ConnectFour::make_move()`].
-    fn make_move(&mut self, player: player_id, mov: move_code) -> Result<()> {
-        self.game.make_move(player, mov)
+        Ok(Self(ConnectFour::create(init_info)?.0))
     }
 
     /// Wrapper around [`GameOptions::width()`].
     fn width(&self) -> u8 {
-        self.game.options().width()
+        self.options().width()
     }
 
     /// Wrapper around [`GameOptions::height()`].
     fn height(&self) -> u8 {
-        self.game.options().height()
+        self.options().height()
     }
 
     /// Return iterator over all chips currently on the board.
     fn chips(&self) -> ChipIter {
         ChipIter {
-            game: &self.game,
+            game: &self,
             x: 0,
             y: 0,
         }
     }
+}
 
-    /// Wrapper around [`Game::turn()`].
-    fn turn(&self) -> bool {
-        self.game.turn()
+impl Deref for Game {
+    type Target = ConnectFour;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for Game {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
 
