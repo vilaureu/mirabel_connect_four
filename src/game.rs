@@ -109,6 +109,20 @@ impl ConnectFour {
         !self.data.result.is_over()
             && matches!(self[(column, self.options.height - 1)], State::Empty)
     }
+
+    /// Return the row number of the lowest free cell in this `column`.
+    ///
+    /// # Panics
+    /// Panics if there is no such free cell.
+    pub(crate) fn free_cell(&self, column: u8) -> u8 {
+        self.iter((column, 0), Direction::N)
+            .enumerate()
+            .find(|&(_, s)| s == State::Empty)
+            .expect("move impossible")
+            .0
+            .try_into()
+            .unwrap()
+    }
 }
 
 impl GameMethods for ConnectFour {
@@ -341,12 +355,7 @@ impl GameMethods for ConnectFour {
 
     fn make_move(&mut self, player: player_id, mov: move_code) -> Result<()> {
         let mov = mov.try_into().unwrap();
-        let (y, _) = self
-            .iter((mov, 0), Direction::N)
-            .enumerate()
-            .find(|&(_, s)| s == State::Empty)
-            .expect("move impossible");
-        let pos = (mov, y.try_into().unwrap());
+        let pos = (mov, self.free_cell(mov));
         self.set(pos, State::from_player_id(player));
 
         let state = State::from_player_id(player);
@@ -450,7 +459,7 @@ impl Index<Pos> for ConnectFour {
 }
 
 /// Column × Row
-type Pos = (u8, u8);
+pub(crate) type Pos = (u8, u8);
 
 /// The state of a single field of the game board.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -761,7 +770,7 @@ impl GameResult {
 ///
 /// # Panics
 /// Panics if given numbers other than 1 or 2.
-const fn player_from_id(player: player_id) -> bool {
+pub(crate) const fn player_from_id(player: player_id) -> bool {
     match player {
         1 => false,
         2 => true,

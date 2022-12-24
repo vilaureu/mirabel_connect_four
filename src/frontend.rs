@@ -1,6 +1,9 @@
 //! _mirabel_ frontend plugin for _Connect Four_.
 
-use std::ops::{Deref, DerefMut};
+use std::{
+    ops::{Deref, DerefMut},
+    time::{Duration, Instant},
+};
 
 use mirabel::{
     cstr,
@@ -17,7 +20,9 @@ use mirabel::{
 };
 use surena_game::{GameInit, GameMethods};
 
-use crate::game::{player_to_id, ConnectFour, State, GAME_NAME, IMPL_NAME, VARIANT_NAME};
+use crate::game::{
+    player_from_id, player_to_id, ConnectFour, Pos, State, GAME_NAME, IMPL_NAME, VARIANT_NAME,
+};
 
 /// Background color.
 const BACKGROUND: Color4f = Color4f::new(201. / 255., 144. / 255., 73. / 255., 1.);
@@ -34,6 +39,8 @@ const FRAME_WIDTH: f32 = 0.1;
 const MARGIN: f32 = 0.1;
 /// Height above the frame from which chips drop.
 const DROP_HEIGHT: f32 = 1.2;
+/// How long should an animation take at most.
+const ANIMATION_SPEED: Duration = Duration::from_millis(500);
 
 /// Container for the state of the frontend.
 #[derive(Default)]
@@ -41,6 +48,8 @@ struct Frontend {
     /// The currently running game if any.
     game: Option<Game>,
     mouse: Mouse,
+    /// The currently active animation if any.
+    animation: Option<Animation>,
     /// Is user input disabled?
     disabled: bool,
 }
@@ -58,6 +67,7 @@ impl Frontend {
     fn clear(&mut self) {
         self.mouse.clear();
         self.disabled = false;
+        self.animation = None;
     }
 
     /// Get the column corresponding with this location if any.
@@ -116,7 +126,26 @@ impl FrontendMethods for Frontend {
             }
             mirabel::EventEnum::GameMove(e) => {
                 frontend.clear();
-                if let Some(ref mut g) = frontend.game {
+                let fr = frontend.frontend;
+                if let Some(ref mut g) = fr.game {
+                    let column = e.code.try_into().unwrap();
+                    if let Some(ref mut a) = fr.animation {
+                        if e.player == g.player_id() && a.target.0 == column {
+                            a.started = true;
+                        } else {
+                            fr.animation = None;
+                        }
+                    } else {
+                        let mut animation = Animation::new(
+                            g.drop_height(),
+                            (column, g.free_cell(column)),
+                            player_from_id(e.player),
+                        );
+                        animation.started = true;
+                        fr.animation = Some(animation);
+                    }
+
+                    fr.disabled = true;
                     g.make_move(e.player, e.code)?;
                 }
             }
@@ -183,12 +212,28 @@ impl FrontendMethods for Frontend {
             column.into(),
         ));
         fr.disabled = true;
+        fr.animation = Some(Animation::new(
+            game.drop_height(),
+            (column, game.free_cell(column)),
+            game.turn(),
+        ));
 
         Ok(())
     }
 
-    fn update(_frontend: mirabel::frontend::Wrapped<Self>) -> mirabel::Result<()> {
-        // TODO
+    fn update(mut frontend: mirabel::frontend::Wrapped<Self>) -> mirabel::Result<()> {
+        let max_drop = match frontend.game {
+            Some(ref g) => g.drop_height(),
+            None => return Ok(()),
+        };
+
+        if let Some(ref mut a) = frontend.animation {
+            if a.update(max_drop) {
+                frontend.animation = None;
+                frontend.disabled = false;
+            }
+        }
+
         Ok(())
     }
 
@@ -201,17 +246,25 @@ impl FrontendMethods for Frontend {
         c.concat(&calc_matrix(game, frontend.display_data));
 
         // Draw chips.
-        let paint_x = &Paint::new(CHIP_X, None);
-        let paint_o = &Paint::new(CHIP_O, None);
         for (x, y, player) in game.chips() {
-            c.draw_circle((x, y), 0.5, if player { paint_o } else { paint_x });
+            if let Some(ref a) = fr.animation {
+                if a.target == (x, y) {
+                    continue;
+                }
+            }
+
+            c.draw_circle((f32::from(x), f32::from(y)), 0.5, &turn_to_paint(player));
+        }
+        // Draw animated chip.
+        if let Some(ref a) = fr.animation {
+            c.draw_circle(a.position(), 0.5, &turn_to_paint(a.player));
         }
         // Draw input preview.
         if let Some(col) = fr.preview() {
             c.draw_circle(
-                (f32::from(col), f32::from(game.height()) - 1. + DROP_HEIGHT),
+                (f32::from(col), game.drop_height()),
                 0.5,
-                if game.turn() { paint_o } else { paint_x },
+                &turn_to_paint(game.turn()),
             );
         }
 
@@ -278,6 +331,11 @@ impl Game {
         self.options().height()
     }
 
+    /// The y positon from which to drop a chip.
+    fn drop_height(&self) -> f32 {
+        f32::from(self.height()) - 1. + DROP_HEIGHT
+    }
+
     /// Return iterator over all chips currently on the board.
     fn chips(&self) -> ChipIter {
         ChipIter {
@@ -319,7 +377,7 @@ struct ChipIter<'l> {
 
 impl<'l> Iterator for ChipIter<'l> {
     /// Has the form: `(x, y, player)`.
-    type Item = (f32, f32, bool);
+    type Item = (u8, u8, bool);
 
     fn next(&mut self) -> Option<Self::Item> {
         let width = self.game.options().width();
@@ -327,7 +385,7 @@ impl<'l> Iterator for ChipIter<'l> {
 
         while self.y < height {
             let state = self.game[(self.x, self.y)];
-            let result = (self.x.into(), self.y.into());
+            let (x, y) = (self.x, self.y);
 
             self.x += 1;
             if self.x >= width {
@@ -336,8 +394,8 @@ impl<'l> Iterator for ChipIter<'l> {
             }
             return Some(match state {
                 State::Empty => continue,
-                State::X => (result.0, result.1, false),
-                State::O => (result.0, result.1, true),
+                State::X => (x, y, false),
+                State::O => (x, y, true),
             });
         }
 
@@ -385,6 +443,61 @@ impl Mouse {
     }
 }
 
+/// Information for animating a chip dropping.
+struct Animation {
+    /// Current y position.
+    current: f32,
+    /// Time when [`Self::update()`] was last called.
+    previous: Option<Instant>,
+    /// Target cell of the chip.
+    target: Pos,
+    /// Has the animation started already?
+    started: bool,
+    /// Whose chip is dropping?
+    player: bool,
+}
+
+impl Animation {
+    /// Create a new, not-started animation.
+    fn new(from: f32, to: Pos, player: bool) -> Self {
+        Self {
+            current: from,
+            previous: None,
+            target: to,
+            started: false,
+            player,
+        }
+    }
+
+    /// Update the animation state.
+    ///
+    /// `max_drop` denotes the maximum height any chip could fall with this
+    /// game's configuration (use [`Game::drop_height()`]).
+    ///
+    /// Returns true when the animation has finished.
+    fn update(&mut self, max_drop: f32) -> bool {
+        if !self.started {
+            return false;
+        }
+        let now = Instant::now();
+        let result = if let Some(previous) = self.previous {
+            let duration = now.duration_since(previous);
+            let delta = duration.as_secs_f32() / ANIMATION_SPEED.as_secs_f32() * max_drop;
+            self.current -= delta;
+            self.current <= f32::from(self.target.1)
+        } else {
+            false
+        };
+        self.previous = Some(now);
+        result
+    }
+
+    /// Current position of the animated chip.
+    fn position(&self) -> (f32, f32) {
+        (self.target.0.into(), self.current)
+    }
+}
+
 /// Creates a transformation matrix for easier drawing.
 ///
 /// Each cell is 1x1, the origin is in the middle of the bottom-left cell, and
@@ -409,6 +522,15 @@ fn calc_matrix(game: &Game, display_data: &frontend_display_data) -> Matrix {
     let trans = MARGIN + FRAME_WIDTH + 0.5;
     matrix.pre_translate((trans, trans));
     matrix
+}
+
+/// Return the chip [`Paint`] for the specified `player`.
+fn turn_to_paint(player: bool) -> Paint {
+    if player {
+        Paint::new(CHIP_O, None)
+    } else {
+        Paint::new(CHIP_X, None)
+    }
 }
 
 /// Generate [`frontend_methods`] struct.
