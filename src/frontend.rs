@@ -9,13 +9,15 @@ use mirabel::{
         skia::{Color4f, Matrix, Paint, Rect},
         FrontendMethods, Metadata,
     },
-    plugin_get_frontend_methods, semver,
-    sys::frontend_display_data,
-    ErrorCode, Result, ValidCStr,
+    player_id, plugin_get_frontend_methods,
+    sdl_event::sdl_button_mask,
+    semver,
+    sys::{frontend_display_data, SDL_BUTTON_LEFT},
+    ErrorCode, EventAny, Result, ValidCStr,
 };
 use surena_game::{GameInit, GameMethods};
 
-use crate::game::{ConnectFour, State, GAME_NAME, IMPL_NAME, VARIANT_NAME};
+use crate::game::{player_to_id, ConnectFour, State, GAME_NAME, IMPL_NAME, VARIANT_NAME};
 
 /// Background color.
 const BACKGROUND: Color4f = Color4f::new(201. / 255., 144. / 255., 73. / 255., 1.);
@@ -38,7 +40,50 @@ const DROP_HEIGHT: f32 = 1.2;
 struct Frontend {
     /// The currently running game if any.
     game: Option<Game>,
-    input: Input,
+    mouse: Mouse,
+    /// Is user input disabled?
+    disabled: bool,
+}
+
+impl Frontend {
+    /// Reset whole frontend including the game.
+    fn reset(&mut self) {
+        self.game = None;
+        self.clear();
+    }
+
+    /// Clear current user input.
+    ///
+    /// This should be called when an external event is received.
+    fn clear(&mut self) {
+        self.mouse.clear();
+        self.disabled = false;
+    }
+
+    /// Get the column corresponding with this location if any.
+    ///
+    /// Only returns the column if such a move would be possible.
+    fn get_column(&self, x: f32) -> Option<u8> {
+        let Some(ref game) = self.game else {return None;};
+        let rounded = x.round();
+
+        if rounded < 0. || game.width() <= rounded as u8 {
+            None
+        } else {
+            Some(rounded as u8)
+        }
+        .filter(|&c| game.possible_move(c))
+    }
+
+    /// Calculate the column above which to show a preview, if any.
+    fn preview(&self) -> Option<u8> {
+        if self.disabled {
+            return None;
+        }
+
+        let Some((x, _)) = self.mouse.clicked.or(self.mouse.current) else { return None; };
+        self.get_column(x)
+    }
 }
 
 impl FrontendMethods for Frontend {
@@ -59,18 +104,18 @@ impl FrontendMethods for Frontend {
     ) -> mirabel::Result<()> {
         match event.to_rust() {
             mirabel::EventEnum::GameLoadMethods(e) => {
-                *frontend.frontend = Default::default();
+                frontend.reset();
                 frontend.game = Some(Game::create(&e.init_info)?)
             }
             mirabel::EventEnum::GameUnload(_) => *frontend.frontend = Default::default(),
             mirabel::EventEnum::GameState(e) => {
-                frontend.input = Default::default();
+                frontend.clear();
                 if let Some(ref mut g) = frontend.game {
                     g.import_state(e.state.map(ValidCStr::into))?;
                 }
             }
             mirabel::EventEnum::GameMove(e) => {
-                frontend.input = Default::default();
+                frontend.clear();
                 if let Some(ref mut g) = frontend.game {
                     g.make_move(e.player, e.code)?;
                 }
@@ -82,37 +127,62 @@ impl FrontendMethods for Frontend {
     }
 
     fn process_input(
-        frontend: mirabel::frontend::Wrapped<Self>,
+        mut frontend: mirabel::frontend::Wrapped<Self>,
         event: mirabel::SDLEventEnum,
     ) -> mirabel::Result<()> {
-        let input = &mut frontend.frontend.input;
-        if frontend.frontend.game.is_none() || input.disabled {
+        let display_data = *frontend.display_data;
+        let fr = frontend.frontend;
+        let mouse = &mut fr.mouse;
+        if fr.game.is_none() || fr.disabled {
             return Ok(());
         }
-        let game = frontend.frontend.game.as_ref().unwrap();
+        let game = fr.game.as_ref().unwrap();
 
-        let matrix = calc_matrix(game, frontend.display_data)
+        let matrix = calc_matrix(game, &display_data)
             .invert()
             .expect("transformation matrix not invertible");
-        match event {
+        let clicked = match event {
             mirabel::SDLEventEnum::MouseMotion(e) => {
                 let point = matrix.map_point((e.x, e.y));
-                let rounded = point.x.round();
-                let current = if rounded < 0. || game.width() <= rounded as u8 {
-                    None
-                } else {
-                    Some(rounded as u8)
-                };
+                mouse.update_position(point.x, point.y);
+                mouse.update(sdl_button_mask(SDL_BUTTON_LEFT) & e.state != 0);
 
-                if !input.pressed {
-                    input.selected = current;
-                }
-                input.inside = current == input.selected;
+                None
             }
-            mirabel::SDLEventEnum::MouseButtonDown(_e) => todo!(),
-            mirabel::SDLEventEnum::MouseButtonUp(_e) => todo!(),
-            _ => (),
+            mirabel::SDLEventEnum::MouseButtonDown(e) => {
+                let point = matrix.map_point((e.x, e.y));
+                mouse.update_position(point.x, point.y);
+                if u32::from(e.button) == SDL_BUTTON_LEFT {
+                    mouse.update_down();
+                }
+
+                None
+            }
+            mirabel::SDLEventEnum::MouseButtonUp(e) => {
+                let point = matrix.map_point((e.x, e.y));
+                mouse.update_position(point.x, point.y);
+                if u32::from(e.button) == SDL_BUTTON_LEFT {
+                    mouse.update_up()
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+
+        let Some(clicked) = clicked.map(|(x, _)| x) else { return Ok(()); };
+        let Some(current) = mouse.current.map(|(x, _)| x) else { return Ok(()); };
+
+        let Some(column) = fr.get_column(clicked) else { return Ok(()); };
+        if Some(column) != fr.get_column(current) {
+            return Ok(());
         }
+
+        frontend.outbox.push(&mut EventAny::new_game_move(
+            game.player_id(),
+            column.into(),
+        ));
+        fr.disabled = true;
 
         Ok(())
     }
@@ -137,14 +207,12 @@ impl FrontendMethods for Frontend {
             c.draw_circle((x, y), 0.5, if player { paint_o } else { paint_x });
         }
         // Draw input preview.
-        if let Some(col) = fr.input.selected {
-            if fr.input.inside {
-                c.draw_circle(
-                    (f32::from(col), f32::from(game.height()) - 1. + DROP_HEIGHT),
-                    0.5,
-                    if game.turn() { paint_o } else { paint_x },
-                );
-            }
+        if let Some(col) = fr.preview() {
+            c.draw_circle(
+                (f32::from(col), f32::from(game.height()) - 1. + DROP_HEIGHT),
+                0.5,
+                if game.turn() { paint_o } else { paint_x },
+            );
         }
 
         // Draw frame.
@@ -213,10 +281,18 @@ impl Game {
     /// Return iterator over all chips currently on the board.
     fn chips(&self) -> ChipIter {
         ChipIter {
-            game: &self,
+            game: self,
             x: 0,
             y: 0,
         }
+    }
+
+    /// Return who is currently to move.
+    ///
+    /// # Panics
+    /// Panics if the game is over.
+    fn player_id(&self) -> player_id {
+        player_to_id(self.turn())
     }
 }
 
@@ -269,13 +345,44 @@ impl<'l> Iterator for ChipIter<'l> {
     }
 }
 
-/// Struct holding data related to user input.
+/// Helper for tracking mouse state.
 #[derive(Default)]
-struct Input {
-    selected: Option<u8>,
-    pressed: bool,
-    inside: bool,
-    disabled: bool,
+struct Mouse {
+    current: Option<(f32, f32)>,
+    clicked: Option<(f32, f32)>,
+}
+
+impl Mouse {
+    /// Update mouse position.
+    fn update_position(&mut self, x: f32, y: f32) {
+        self.current = Some((x, y));
+    }
+
+    /// Update state on button press.
+    fn update_down(&mut self) {
+        self.clicked = self.current;
+    }
+
+    /// Update state on release.
+    ///
+    /// Returns the clicked location if this was a regular mouse click.
+    fn update_up(&mut self) -> Option<(f32, f32)> {
+        let result = self.clicked;
+        self.clear();
+        result
+    }
+
+    /// Update state with stray button information (eg., from mouse move).
+    fn update(&mut self, down: bool) {
+        if !down {
+            self.clear();
+        }
+    }
+
+    /// Clear mouse state.
+    fn clear(&mut self) {
+        self.clicked = None;
+    }
 }
 
 /// Creates a transformation matrix for easier drawing.

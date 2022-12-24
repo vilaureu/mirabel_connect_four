@@ -99,6 +99,16 @@ impl ConnectFour {
         );
         self.data.turn
     }
+
+    /// Check if a move can be performed in this column.
+    ///
+    /// # Panics
+    /// Panics if the column id is invalid.
+    #[cfg(feature = "mirabel")]
+    pub(crate) fn possible_move(&self, column: u8) -> bool {
+        !self.data.result.is_over()
+            && matches!(self[(column, self.options.height - 1)], State::Empty)
+    }
 }
 
 impl GameMethods for ConnectFour {
@@ -760,7 +770,7 @@ const fn player_from_id(player: player_id) -> bool {
 }
 
 /// Converts the [`GameData::turn`] boolean to a `player_id`.
-const fn player_to_id(player: bool) -> player_id {
+pub(crate) const fn player_to_id(player: bool) -> player_id {
     if player {
         2
     } else {
