@@ -59,6 +59,7 @@ impl Frontend {
     fn reset(&mut self) {
         self.game = None;
         self.clear();
+        self.mouse.current = None;
     }
 
     /// Clear current user input.
@@ -162,10 +163,7 @@ impl FrontendMethods for Frontend {
         let display_data = *frontend.display_data;
         let fr = frontend.frontend;
         let mouse = &mut fr.mouse;
-        if fr.game.is_none() || fr.disabled {
-            return Ok(());
-        }
-        let game = fr.game.as_ref().unwrap();
+        let Some(ref game) = fr.game else { return Ok(()); };
 
         let matrix = calc_matrix(game, &display_data)
             .invert()
@@ -181,7 +179,8 @@ impl FrontendMethods for Frontend {
             mirabel::SDLEventEnum::MouseButtonDown(e) => {
                 let point = matrix.map_point((e.x, e.y));
                 mouse.update_position(point.x, point.y);
-                if u32::from(e.button) == SDL_BUTTON_LEFT {
+
+                if !fr.disabled && u32::from(e.button) == SDL_BUTTON_LEFT {
                     mouse.update_down();
                 }
 
@@ -190,7 +189,8 @@ impl FrontendMethods for Frontend {
             mirabel::SDLEventEnum::MouseButtonUp(e) => {
                 let point = matrix.map_point((e.x, e.y));
                 mouse.update_position(point.x, point.y);
-                if u32::from(e.button) == SDL_BUTTON_LEFT {
+
+                if !fr.disabled && u32::from(e.button) == SDL_BUTTON_LEFT {
                     mouse.update_up()
                 } else {
                     None
@@ -199,8 +199,8 @@ impl FrontendMethods for Frontend {
             _ => None,
         };
 
-        let Some(clicked) = clicked.map(|(x, _)| x) else { return Ok(()); };
-        let Some(current) = mouse.current.map(|(x, _)| x) else { return Ok(()); };
+        let Some((clicked, _)) = clicked else { return Ok(()); };
+        let Some((current, _)) = mouse.current else { return Ok(()); };
 
         let Some(column) = fr.get_column(clicked) else { return Ok(()); };
         if Some(column) != fr.get_column(current) {
