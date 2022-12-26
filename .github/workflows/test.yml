@@ -14,7 +14,7 @@ jobs:
     name: Build and test
     runs-on: ubuntu-latest
     outputs:
-      mirabel_sys: ${{ steps.mirabel_sys.outputs.rev }}
+      mirabel_rs: ${{ steps.mirabel_rs.outputs.rev }}
     steps:
       - uses: actions/checkout@v3
         id: checkout
@@ -41,11 +41,11 @@ jobs:
           path: target/debug/libmirabel_connect_four.so
       - name: Install cargo-lock
         run: cargo install cargo-lock --version=8.0.3 --features=cli
-      # find out mirabel_sys commit hash via cargo-lock
-      - name: Get mirabel_sys revision
-        id: mirabel_sys
+      # find out mirabel_rs commit hash via cargo-lock
+      - name: Get mirabel_rs revision
+        id: mirabel_rs
         run: >-
-          echo "rev=$(cargo lock --sources --package mirabel_sys | sed -rn
+          echo "rev=$(cargo lock --sources --package mirabel_rs | sed -rn
           's/^.+rev=([a-f0-9]+)#\1\)$/\1/p')" >> $GITHUB_OUTPUT
       - name: Test
         timeout-minutes: 5
@@ -68,8 +68,8 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          repository: vilaureu/mirabel_sys
-          ref: ${{ needs.build.outputs.mirabel_sys }}
+          repository: vilaureu/mirabel_rs
+          ref: ${{ needs.build.outputs.mirabel_rs }}
           submodules: recursive
       - name: Get surena commit
         id: get-surena

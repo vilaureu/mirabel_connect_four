@@ -10,16 +10,12 @@ crate-type = ["cdylib"]
 
 [features]
 default = ["mirabel"]
-mirabel = ["dep:mirabel"]
-
-[dependencies.surena_game]
-git = "https://github.com/vilaureu/surena_game_rs"
-rev = "fc703a3245038014d2d949ef409aac50cdd81027"
+mirabel = ["mirabel/mirabel", "mirabel/skia"]
 
 [dependencies.mirabel]
 git = "https://github.com/vilaureu/mirabel_rs"
-rev = "9f35ecb65f557b7eec3b3d230cf83c9db4ba4634"
-optional = true
+rev = "3a0973b1277c21c6d976988826b5f578c67d43c4"
+default-features = false
 
 [profile.release]
 panic = "abort"

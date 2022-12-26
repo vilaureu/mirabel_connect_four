@@ -5,13 +5,20 @@ use std::ops::Index;
 use std::str::FromStr;
 
 use crate::bitvec::BitVec;
-use surena_game::{
-    buf_sizer, create_game_methods, cstr, game_feature_flags, game_methods, move_code, player_id,
-    plugin_get_game_methods, semver, Error,
-    ErrorCode::{InvalidInput, InvalidOptions},
-    GameMethods, Metadata, PtrVec, Result, StrBuf,
+use mirabel::{
+    cstr,
+    error::{
+        Error,
+        ErrorCode::{self, InvalidInput, InvalidOptions},
+        Result,
+    },
+    game::{
+        buf_sizer, game_feature_flags, move_code, player_id, semver, GameMethods, Metadata, StrBuf,
+    },
+    game_init::GameInit,
+    plugin_get_game_methods,
+    ptr_vec::PtrVec,
 };
-use surena_game::{ErrorCode, GameInit};
 
 pub const GAME_NAME: &str = "Connect_Four\0";
 pub const VARIANT_NAME: &str = "Classic\0";
@@ -21,13 +28,13 @@ const DEFAULT_WIDTH: u8 = 7;
 const DEFAULT_HEIGHT: u8 = 6;
 const DEFAULT_LENGTH: u8 = 4;
 
-/// Generate [`game_methods`] struct.
-fn connect_four() -> game_methods {
+/// Generate [`Metadata`] struct.
+fn connect_four() -> Metadata {
     let mut features = game_feature_flags::default();
     features.set_print(true);
     features.set_options(true);
 
-    create_game_methods::<ConnectFour>(Metadata {
+    Metadata {
         game_name: cstr(GAME_NAME),
         variant_name: cstr(VARIANT_NAME),
         impl_name: cstr(IMPL_NAME),
@@ -37,10 +44,10 @@ fn connect_four() -> game_methods {
             patch: 0,
         },
         features,
-    })
+    }
 }
 
-plugin_get_game_methods!(connect_four());
+plugin_get_game_methods!(ConnectFour{connect_four()});
 
 /// Struct holding options and game state.
 #[derive(PartialEq, Eq, Clone, Debug)]
@@ -825,10 +832,10 @@ const ERROR: () = "16 bit architectures are not supported.";
 mod tests {
     use std::ptr::{null, null_mut};
 
-    use surena_game::{
+    use mirabel::{
+        error::ErrorCode::{self, InvalidInput, InvalidOptions},
+        game::{GameMethods, PLAYER_NONE},
         ptr_vec::Storage,
-        ErrorCode::{self, InvalidInput, InvalidOptions},
-        GameMethods, PLAYER_NONE,
     };
 
     use super::*;

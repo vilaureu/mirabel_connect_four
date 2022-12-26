@@ -7,18 +7,19 @@ use std::{
 
 use mirabel::{
     cstr,
+    error::{ErrorCode, Result},
+    event::{EventAny, EventEnum},
     frontend::{
-        create_frontend_methods, frontend_feature_flags, frontend_methods,
+        frontend_display_data, frontend_feature_flags,
         skia::{Color4f, Matrix, Paint, Rect},
-        FrontendMethods, Metadata,
+        Context, FrontendMethods, GameInfo, Metadata,
     },
-    player_id, plugin_get_frontend_methods,
-    sdl_event::sdl_button_mask,
-    semver,
-    sys::{frontend_display_data, SDL_BUTTON_LEFT},
-    ErrorCode, EventAny, Result, ValidCStr,
+    game::{player_id, semver, GameMethods},
+    game_init::GameInit,
+    plugin_get_frontend_methods,
+    sdl_event::{sdl_button_mask, SDLEventEnum, SDL_BUTTON_LEFT},
+    CodeResult, ValidCStr,
 };
-use surena_game::{GameInit, GameMethods};
 
 use crate::game::{
     player_from_id, player_to_id, ConnectFour, Pos, State, GAME_NAME, IMPL_NAME, VARIANT_NAME,
@@ -100,41 +101,37 @@ impl Frontend {
 impl FrontendMethods for Frontend {
     type Options = ();
 
-    fn create(_options: Option<&Self::Options>) -> mirabel::Result<Self> {
+    fn create(_options: Option<&Self::Options>) -> Result<Self> {
         Ok(Self::default())
     }
 
-    fn runtime_opts_display(_frontend: mirabel::frontend::Wrapped<Self>) -> mirabel::Result<()> {
+    fn runtime_opts_display(&mut self, _ctx: Context<Self>) -> Result<()> {
         // No runtime options.
         Ok(())
     }
 
-    fn process_event(
-        mut frontend: mirabel::frontend::Wrapped<Self>,
-        event: mirabel::EventAny,
-    ) -> mirabel::Result<()> {
+    fn process_event(&mut self, _ctx: Context<Self>, event: EventAny) -> Result<()> {
         match event.to_rust() {
-            mirabel::EventEnum::GameLoadMethods(e) => {
-                frontend.reset();
-                frontend.game = Some(Game::create(&e.init_info)?)
+            EventEnum::GameLoadMethods(e) => {
+                self.reset();
+                self.game = Some(Game::create(&e.init_info)?)
             }
-            mirabel::EventEnum::GameUnload(_) => *frontend.frontend = Default::default(),
-            mirabel::EventEnum::GameState(e) => {
-                frontend.clear();
-                if let Some(ref mut g) = frontend.game {
+            EventEnum::GameUnload(_) => self.reset(),
+            EventEnum::GameState(e) => {
+                self.clear();
+                if let Some(ref mut g) = self.game {
                     g.import_state(e.state.map(ValidCStr::into))?;
                 }
             }
-            mirabel::EventEnum::GameMove(e) => {
-                frontend.clear();
-                let fr = frontend.frontend;
-                if let Some(ref mut g) = fr.game {
+            EventEnum::GameMove(e) => {
+                self.clear();
+                if let Some(ref mut g) = self.game {
                     let column = e.code.try_into().unwrap();
-                    if let Some(ref mut a) = fr.animation {
+                    if let Some(ref mut a) = self.animation {
                         if e.player == g.player_id() && a.target.0 == column {
                             a.started = true;
                         } else {
-                            fr.animation = None;
+                            self.animation = None;
                         }
                     } else {
                         let mut animation = Animation::new(
@@ -143,10 +140,10 @@ impl FrontendMethods for Frontend {
                             player_from_id(e.player),
                         );
                         animation.started = true;
-                        fr.animation = Some(animation);
+                        self.animation = Some(animation);
                     }
 
-                    fr.disabled = true;
+                    self.disabled = true;
                     g.make_move(e.player, e.code)?;
                 }
             }
@@ -156,41 +153,36 @@ impl FrontendMethods for Frontend {
         Ok(())
     }
 
-    fn process_input(
-        mut frontend: mirabel::frontend::Wrapped<Self>,
-        event: mirabel::SDLEventEnum,
-    ) -> mirabel::Result<()> {
-        let display_data = *frontend.display_data;
-        let fr = frontend.frontend;
-        let mouse = &mut fr.mouse;
-        let Some(ref game) = fr.game else { return Ok(()); };
+    fn process_input(&mut self, mut ctx: Context<Self>, event: SDLEventEnum) -> Result<()> {
+        let mouse = &mut self.mouse;
+        let Some(ref game) = self.game else { return Ok(()); };
 
-        let matrix = calc_matrix(game, &display_data)
+        let matrix = calc_matrix(game, ctx.display_data)
             .invert()
             .expect("transformation matrix not invertible");
         let clicked = match event {
-            mirabel::SDLEventEnum::MouseMotion(e) => {
+            SDLEventEnum::MouseMotion(e) => {
                 let point = matrix.map_point((e.x, e.y));
                 mouse.update_position(point.x, point.y);
                 mouse.update(sdl_button_mask(SDL_BUTTON_LEFT) & e.state != 0);
 
                 None
             }
-            mirabel::SDLEventEnum::MouseButtonDown(e) => {
+            SDLEventEnum::MouseButtonDown(e) => {
                 let point = matrix.map_point((e.x, e.y));
                 mouse.update_position(point.x, point.y);
 
-                if !fr.disabled && u32::from(e.button) == SDL_BUTTON_LEFT {
+                if !self.disabled && u32::from(e.button) == SDL_BUTTON_LEFT {
                     mouse.update_down();
                 }
 
                 None
             }
-            mirabel::SDLEventEnum::MouseButtonUp(e) => {
+            SDLEventEnum::MouseButtonUp(e) => {
                 let point = matrix.map_point((e.x, e.y));
                 mouse.update_position(point.x, point.y);
 
-                if !fr.disabled && u32::from(e.button) == SDL_BUTTON_LEFT {
+                if !self.disabled && u32::from(e.button) == SDL_BUTTON_LEFT {
                     mouse.update_up()
                 } else {
                     None
@@ -202,17 +194,17 @@ impl FrontendMethods for Frontend {
         let Some((clicked, _)) = clicked else { return Ok(()); };
         let Some((current, _)) = mouse.current else { return Ok(()); };
 
-        let Some(column) = fr.get_column(clicked) else { return Ok(()); };
-        if Some(column) != fr.get_column(current) {
+        let Some(column) = self.get_column(clicked) else { return Ok(()); };
+        if Some(column) != self.get_column(current) {
             return Ok(());
         }
 
-        frontend.outbox.push(&mut EventAny::new_game_move(
+        ctx.outbox.push(&mut EventAny::new_game_move(
             game.player_id(),
             column.into(),
         ));
-        fr.disabled = true;
-        fr.animation = Some(Animation::new(
+        self.disabled = true;
+        self.animation = Some(Animation::new(
             game.drop_height(),
             (column, game.free_cell(column)),
             game.turn(),
@@ -221,33 +213,33 @@ impl FrontendMethods for Frontend {
         Ok(())
     }
 
-    fn update(mut frontend: mirabel::frontend::Wrapped<Self>) -> mirabel::Result<()> {
-        let max_drop = match frontend.game {
+    fn update(&mut self, _ctx: Context<Self>) -> Result<()> {
+        let max_drop = match self.game {
             Some(ref g) => g.drop_height(),
             None => return Ok(()),
         };
 
-        if let Some(ref mut a) = frontend.animation {
+        if let Some(ref mut a) = self.animation {
             if a.update(max_drop) {
-                frontend.animation = None;
-                frontend.disabled = false;
+                self.animation = None;
+                self.disabled = false;
             }
         }
 
         Ok(())
     }
 
-    fn render(mut frontend: mirabel::frontend::Wrapped<Self>) -> mirabel::Result<()> {
-        let c = frontend.canvas.get();
+    fn render(&mut self, mut ctx: Context<Self>) -> Result<()> {
+        let c = ctx.canvas.get();
         c.clear(BACKGROUND);
 
-        let fr = frontend.frontend;
-        let Some(ref game) = fr.game else {return Ok(());};
-        c.concat(&calc_matrix(game, frontend.display_data));
+        let Some(ref game) = self.game else {return Ok(());};
+        let matrix = &calc_matrix(game, ctx.display_data);
+        c.set_matrix(&matrix.into());
 
         // Draw chips.
         for (x, y, player) in game.chips() {
-            if let Some(ref a) = fr.animation {
+            if let Some(ref a) = self.animation {
                 if a.target == (x, y) {
                     continue;
                 }
@@ -256,11 +248,11 @@ impl FrontendMethods for Frontend {
             c.draw_circle((f32::from(x), f32::from(y)), 0.5, &turn_to_paint(player));
         }
         // Draw animated chip.
-        if let Some(ref a) = fr.animation {
+        if let Some(ref a) = self.animation {
             c.draw_circle(a.position(), 0.5, &turn_to_paint(a.player));
         }
         // Draw input preview.
-        if let Some(col) = fr.preview() {
+        if let Some(col) = self.preview() {
             c.draw_circle(
                 (f32::from(col), game.drop_height()),
                 0.5,
@@ -300,7 +292,7 @@ impl FrontendMethods for Frontend {
         Ok(())
     }
 
-    fn is_game_compatible(game: mirabel::frontend::GameInfo) -> mirabel::CodeResult<()> {
+    fn is_game_compatible(game: GameInfo) -> CodeResult<()> {
         if game.game_name == strip_nul(GAME_NAME)
             && game.impl_name == strip_nul(IMPL_NAME)
             && game.variant_name == strip_nul(VARIANT_NAME)
@@ -517,10 +509,12 @@ fn calc_matrix(game: &Game, display_data: &frontend_display_data) -> Matrix {
         ty = 0.;
     }
 
-    let mut matrix = Matrix::translate((tx, display_data.h - ty));
-    matrix.pre_scale((scale, -scale), None);
-    let trans = MARGIN + FRAME_WIDTH + 0.5;
-    matrix.pre_translate((trans, trans));
+    let internal_trans = MARGIN + FRAME_WIDTH + 0.5;
+    let mut matrix = Matrix::translate((display_data.x, display_data.y));
+    matrix
+        .pre_translate((tx, display_data.h - ty))
+        .pre_scale((scale, -scale), None)
+        .pre_translate((internal_trans, internal_trans));
     matrix
 }
 
@@ -533,9 +527,9 @@ fn turn_to_paint(player: bool) -> Paint {
     }
 }
 
-/// Generate [`frontend_methods`] struct.
-fn connect_four() -> frontend_methods {
-    create_frontend_methods::<Frontend>(Metadata {
+/// Generate [`Metadata`] struct.
+fn connect_four() -> Metadata {
+    Metadata {
         frontend_name: cstr("Connect_Four\0"),
         version: semver {
             major: 0,
@@ -543,10 +537,10 @@ fn connect_four() -> frontend_methods {
             patch: 0,
         },
         features: frontend_feature_flags::default(),
-    })
+    }
 }
 
-plugin_get_frontend_methods!(connect_four());
+plugin_get_frontend_methods!(Frontend{connect_four()});
 
 /// Strip NUL character from `s`.
 ///

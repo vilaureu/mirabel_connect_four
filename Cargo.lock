@@ -256,10 +256,11 @@ dependencies = [
 [[package]]
 name = "mirabel"
 version = "0.1.0"
-source = "git+https://github.com/vilaureu/mirabel_rs?rev=9f35ecb65f557b7eec3b3d230cf83c9db4ba4634#9f35ecb65f557b7eec3b3d230cf83c9db4ba4634"
+source = "git+https://github.com/vilaureu/mirabel_rs?rev=3a0973b1277c21c6d976988826b5f578c67d43c4#3a0973b1277c21c6d976988826b5f578c67d43c4"
 dependencies = [
+ "bindgen",
  "gl_generator",
- "mirabel_sys",
+ "regex",
  "skia-safe",
 ]
 
@@ -268,16 +269,6 @@ name = "mirabel_connect_four"
 version = "0.1.0"
 dependencies = [
  "mirabel",
- "surena_game",
-]
-
-[[package]]
-name = "mirabel_sys"
-version = "0.1.0"
-source = "git+https://github.com/vilaureu/mirabel_sys?rev=35ad525d55b6713be2d8633b967158726bbc3d01#35ad525d55b6713be2d8633b967158726bbc3d01"
-dependencies = [
- "bindgen",
- "regex",
 ]
 
 [[package]]
@@ -458,14 +449,6 @@ name = "spin"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6e63cff320ae2c57904679ba7cb63280a3dc4613885beafb148ee7bf9aa9042d"
-
-[[package]]
-name = "surena_game"
-version = "0.1.0"
-source = "git+https://github.com/vilaureu/surena_game_rs?rev=fc703a3245038014d2d949ef409aac50cdd81027#fc703a3245038014d2d949ef409aac50cdd81027"
-dependencies = [
- "mirabel_sys",
-]
 
 [[package]]
 name = "syn"
