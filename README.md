@@ -19,6 +19,7 @@ This is an implementation of the _Connect Four_ game for the
 ## Running
 
 Using _surena_:
+
 ```
 $ surena --game-plugin ./libmirabel_connect_four.so
 ```
@@ -44,15 +45,13 @@ A dash indicates a draw.
 
 ## TODOs
 
-- Create a frontend
-- Implement more optional API methods
+- Implement more optional API methods.
+- Implement an engine.
 
 ## Libraries
 
 This project uses the following libraries:
 
-- [_surena_game_rs_](https://github.com/vilaureu/surena_game_rs) under the
-  [_MIT License_](https://github.com/vilaureu/surena_game_rs/blob/main/LICENSE)
 - [_mirabel_rs_](https://github.com/vilaureu/mirabel_rs) under the
   [_MIT License_](https://github.com/vilaureu/mirabel_rs/blob/main/LICENSE)
 
