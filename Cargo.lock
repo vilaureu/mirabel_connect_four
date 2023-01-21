@@ -256,7 +256,7 @@ dependencies = [
 [[package]]
 name = "mirabel"
 version = "0.1.0"
-source = "git+https://github.com/vilaureu/mirabel_rs?rev=3a0973b1277c21c6d976988826b5f578c67d43c4#3a0973b1277c21c6d976988826b5f578c67d43c4"
+source = "git+https://github.com/vilaureu/mirabel_rs?rev=aae75608067ff8c97519c89c5b5f41cefeacde92#aae75608067ff8c97519c89c5b5f41cefeacde92"
 dependencies = [
  "bindgen",
  "gl_generator",
@@ -417,9 +417,9 @@ checksum = "43b2853a4d09f215c24cc5489c992ce46052d359b5109343cbafbf26bc62f8a3"
 
 [[package]]
 name = "skia-bindings"
-version = "0.57.0"
+version = "0.58.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06eade095c427b059cebaf220a2bd78d8136129183e6ca92603ed2d689300709"
+checksum = "404d98ffda633acd7a3ea68e0e5f160814ee7ae8942c89d60c53f7e0fae99373"
 dependencies = [
  "bindgen",
  "cc",
@@ -435,9 +435,9 @@ dependencies = [
 
 [[package]]
 name = "skia-safe"
-version = "0.57.0"
+version = "0.58.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa22a9ab62ccffa803562426cc41574a95ffb3652a37c095d64fa9033fde6234"
+checksum = "53fb6ba679574182f565bd7b38e40d1ba658d33d8287d28905af5fb3e9b98b49"
 dependencies = [
  "bitflags",
  "lazy_static",

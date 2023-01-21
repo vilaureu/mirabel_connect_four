@@ -5,6 +5,7 @@ use std::ops::Index;
 use std::str::FromStr;
 
 use crate::bitvec::BitVec;
+use mirabel::game::{GameFeatures, MoveCode};
 use mirabel::{
     cstr,
     error::{
@@ -12,13 +13,11 @@ use mirabel::{
         ErrorCode::{self, InvalidInput, InvalidOptions},
         Result,
     },
-    game::{
-        buf_sizer, game_feature_flags, move_code, player_id, semver, GameMethods, Metadata, StrBuf,
-    },
+    game::{move_code, player_id, semver, GameMethods, Metadata},
     game_init::GameInit,
     plugin_get_game_methods,
-    ptr_vec::PtrVec,
 };
+use mirabel::{MoveDataSync, ValidCString};
 
 pub const GAME_NAME: &str = "Connect_Four\0";
 pub const VARIANT_NAME: &str = "Classic\0";
@@ -30,10 +29,6 @@ const DEFAULT_LENGTH: u8 = 4;
 
 /// Generate [`Metadata`] struct.
 fn connect_four() -> Metadata {
-    let mut features = game_feature_flags::default();
-    features.set_print(true);
-    features.set_options(true);
-
     Metadata {
         game_name: cstr(GAME_NAME),
         variant_name: cstr(VARIANT_NAME),
@@ -43,7 +38,10 @@ fn connect_four() -> Metadata {
             minor: 1,
             patch: 0,
         },
-        features,
+        features: GameFeatures {
+            options: true,
+            print: true,
+        },
     }
 }
 
@@ -133,12 +131,14 @@ impl ConnectFour {
 }
 
 impl GameMethods for ConnectFour {
-    /// Creates a new instance of the game and a corresponding [`buf_sizer`].
+    type Move = MoveCode;
+
+    /// Creates a new instance of the game.
     ///
     /// See [`GameOptions::new()`] for a documentation of the options string.
     /// See [`Self::import_state()`] for a documentation of the state string.
     /// Serialized `init_info` is not supported.
-    fn create(init_info: &GameInit) -> Result<(Self, buf_sizer)> {
+    fn create(init_info: &GameInit) -> Result<Self> {
         let (options, state) = match *init_info {
             GameInit::Default => (None, None),
             GameInit::Standard {
@@ -166,17 +166,16 @@ impl GameMethods for ConnectFour {
             .map(GameOptions::new)
             .transpose()?
             .unwrap_or_default();
-        let sizer = options.sizer();
         let mut game = Self {
             options,
             data: GameData::new(&options),
         };
         game.import_state(state)?;
 
-        Ok((game, sizer))
+        Ok(game)
     }
 
-    fn export_options(&mut self, str_buf: &mut StrBuf) -> Result<()> {
+    fn export_options(&mut self, _player: player_id, str_buf: &mut ValidCString) -> Result<()> {
         write!(
             str_buf,
             "{} {} {}",
@@ -274,7 +273,7 @@ impl GameMethods for ConnectFour {
         Ok(())
     }
 
-    fn export_state(&mut self, str_buf: &mut StrBuf) -> Result<()> {
+    fn export_state(&mut self, _player: player_id, str_buf: &mut ValidCString) -> Result<()> {
         const ERROR: &str = "writing state buffer failed";
 
         for x in 0..self.options.width {
@@ -312,7 +311,11 @@ impl GameMethods for ConnectFour {
         Ok(())
     }
 
-    fn players_to_move(&mut self, players: &mut PtrVec<player_id>) -> Result<()> {
+    fn player_count(&mut self) -> Result<u8> {
+        Ok(2)
+    }
+
+    fn players_to_move(&mut self, players: &mut Vec<player_id>) -> Result<()> {
         if !self.data.result.is_over() {
             players.push(player_to_id(self.data.turn));
         }
@@ -320,11 +323,7 @@ impl GameMethods for ConnectFour {
         Ok(())
     }
 
-    fn get_concrete_moves(
-        &mut self,
-        player: player_id,
-        moves: &mut PtrVec<move_code>,
-    ) -> Result<()> {
+    fn get_concrete_moves(&mut self, player: player_id, moves: &mut Vec<MoveCode>) -> Result<()> {
         let width = self.options.width;
 
         let player = player_from_id(player);
@@ -337,13 +336,13 @@ impl GameMethods for ConnectFour {
                 continue;
             }
 
-            moves.push(column.into());
+            moves.push(move_code::from(column).into());
         }
 
         Ok(())
     }
 
-    fn get_move_code(&mut self, _player: player_id, string: &str) -> Result<move_code> {
+    fn get_move_data(&mut self, _player: player_id, string: &str) -> Result<move_code> {
         string
             .trim()
             .parse()
@@ -353,15 +352,15 @@ impl GameMethods for ConnectFour {
     fn get_move_str(
         &mut self,
         _player: player_id,
-        mov: move_code,
-        str_buf: &mut StrBuf,
+        mov: MoveDataSync<&move_code>,
+        str_buf: &mut ValidCString,
     ) -> Result<()> {
-        write!(str_buf, "{}", mov).expect("writing move buffer failed");
+        write!(str_buf, "{}", mov.md).expect("writing move buffer failed");
         Ok(())
     }
 
-    fn make_move(&mut self, player: player_id, mov: move_code) -> Result<()> {
-        let mov = mov.try_into().unwrap();
+    fn make_move(&mut self, player: player_id, mov: MoveDataSync<&move_code>) -> Result<()> {
+        let mov = (*mov.md).try_into().unwrap();
         let pos = (mov, self.free_cell(mov));
         self.set(pos, State::from_player_id(player));
 
@@ -402,7 +401,7 @@ impl GameMethods for ConnectFour {
         Ok(())
     }
 
-    fn get_results(&mut self, players: &mut PtrVec<player_id>) -> Result<()> {
+    fn get_results(&mut self, players: &mut Vec<player_id>) -> Result<()> {
         if let GameResult::Winner = self.data.result {
             players.push(player_to_id(self.data.turn));
         }
@@ -410,11 +409,11 @@ impl GameMethods for ConnectFour {
         Ok(())
     }
 
-    fn is_legal_move(&mut self, player: player_id, mov: move_code) -> Result<()> {
+    fn is_legal_move(&mut self, player: player_id, mov: MoveDataSync<&move_code>) -> Result<()> {
         // Assert unsigned type
         assert_eq!(0, move_code::MIN);
 
-        if mov >= self.options.width.into() {
+        if *mov.md >= self.options.width.into() {
             return Err(Error::new_static(InvalidInput, "column does not exist\0"));
         }
         if self.data.result.is_over() {
@@ -424,14 +423,14 @@ impl GameMethods for ConnectFour {
             return Err(Error::new_static(InvalidInput, "not this player's turn\0"));
         }
 
-        if let State::Empty = self[(mov as u8, self.options.height - 1)] {
+        if let State::Empty = self[(*mov.md as u8, self.options.height - 1)] {
             Ok(())
         } else {
             Err(Error::new_static(InvalidInput, "column full\0"))
         }
     }
 
-    fn print(&mut self, str_buf: &mut StrBuf) -> Result<()> {
+    fn print(&mut self, _player: player_id, str_buf: &mut ValidCString) -> Result<()> {
         const ERROR: &str = "writing print buffer failed";
         let col_chars = self.options.col_chars();
 
@@ -667,29 +666,6 @@ impl GameOptions {
         })
     }
 
-    /// Calculate the [`buf_sizer`].
-    fn sizer(&self) -> buf_sizer {
-        // Calculations might overflow with only 16 bits.
-        #[allow(clippy::assertions_on_constants)]
-        {
-            assert!(usize::BITS >= 32);
-        }
-
-        buf_sizer {
-            options_str: digits(self.width) + digits(self.height) + digits(self.length) + 3,
-            state_str: (usize::from(self.height) + 1) * usize::from(self.width) + 2,
-            player_count: 2,
-            max_players_to_move: 1,
-            max_moves: self.width.into(),
-            max_results: 1,
-            move_str: self.col_chars() + 1,
-            print_str: ((self.col_chars() + 1) * usize::from(self.width) + 2)
-                * (usize::from(self.height) + 1)
-                + 1,
-            ..Default::default()
-        }
-    }
-
     /// Number of character required to print the largest column index.
     ///
     /// Column indices start from zero.
@@ -798,18 +774,6 @@ fn player_string_error(player: impl Display) -> Error {
     Error::new_dynamic(InvalidInput, format!(r#""{player}" is not a valid player"#))
 }
 
-/// Calculates the number of digits needed to print `n`.
-const fn digits(mut n: u8) -> usize {
-    let mut digits = 1;
-    loop {
-        n /= 10;
-        if n == 0 {
-            return digits;
-        }
-        digits += 1;
-    }
-}
-
 /// Parse the supplied `string`.
 ///
 /// # Errors
@@ -835,7 +799,7 @@ mod tests {
     use mirabel::{
         error::ErrorCode::{self, InvalidInput, InvalidOptions},
         game::{GameMethods, PLAYER_NONE},
-        ptr_vec::Storage,
+        MoveDataSync,
     };
 
     use super::*;
@@ -857,13 +821,12 @@ mod tests {
 
     #[test]
     fn create() {
-        let (game, sizer) = ConnectFour::create(&GameInit::Default).unwrap();
+        let game = ConnectFour::create(&GameInit::Default).unwrap();
         assert_eq!(DEFAULT_WIDTH, game.options.width);
         assert_eq!(DEFAULT_HEIGHT, game.options.height);
         assert_eq!(DEFAULT_LENGTH, game.options.length);
-        assert_eq!(game.options.sizer(), sizer);
 
-        let (game, sizer) = ConnectFour::create(&GameInit::Standard {
+        let game = ConnectFour::create(&GameInit::Standard {
             opts: Some("4x3@2"),
             legacy: None,
             state: None,
@@ -873,7 +836,6 @@ mod tests {
         assert_eq!(4, game.options.width);
         assert_eq!(3, game.options.height);
         assert_eq!(2, game.options.length);
-        assert_eq!(game.options.sizer(), sizer);
 
         fn create(string: &str) -> ErrorCode {
             ConnectFour::create(&GameInit::Standard {
@@ -940,30 +902,33 @@ mod tests {
         let mut game = create_with_state("X/OOxO//X#O");
 
         let expected = "X/OOXO//X///#O";
-        let mut storage = Storage::new(expected.len());
-        game.export_state(&mut storage.get_ptr_vec()).unwrap();
+        let mut storage = ValidCString::default();
+        game.export_state(PLAYER_NONE, &mut storage).unwrap();
 
-        assert_eq!(expected, storage.as_str().unwrap());
+        assert_eq!(expected, storage.as_ref());
     }
 
     #[test]
     fn players_to_move() {
         let mut game = create_default();
 
-        let mut storage = Storage::new(1);
-        game.players_to_move(&mut storage.get_ptr_vec()).unwrap();
+        let mut storage = vec![];
+        game.players_to_move(&mut storage).unwrap();
         assert_eq!([1], *storage);
 
         game.import_state(Some("#o")).unwrap();
-        game.players_to_move(&mut storage.get_ptr_vec()).unwrap();
+        let mut storage = vec![];
+        game.players_to_move(&mut storage).unwrap();
         assert_eq!([2], *storage);
 
         game.import_state(Some("/#O")).unwrap();
-        game.players_to_move(&mut storage.get_ptr_vec()).unwrap();
+        let mut storage = vec![];
+        game.players_to_move(&mut storage).unwrap();
         assert_eq!([] as [player_id; 0], *storage);
 
         game.import_state(Some("/x/#-")).unwrap();
-        game.players_to_move(&mut storage.get_ptr_vec()).unwrap();
+        let mut storage = vec![];
+        game.players_to_move(&mut storage).unwrap();
         assert_eq!([] as [player_id; 0], *storage);
     }
 
@@ -971,50 +936,54 @@ mod tests {
     fn get_concrete_moves() {
         let mut game = create_with_state("//XOXOXO//#o");
 
-        let mut storage = Storage::new(DEFAULT_WIDTH.into());
-        game.get_concrete_moves(1, &mut storage.get_ptr_vec())
-            .unwrap();
-        assert_eq!([] as [move_code; 0], *storage);
+        let mut storage = vec![];
+        game.get_concrete_moves(1, &mut storage).unwrap();
+        assert_eq!(
+            [] as [move_code; 0],
+            MoveCode::slice_to_rust(&storage).as_ref()
+        );
 
-        game.get_concrete_moves(2, &mut storage.get_ptr_vec())
-            .unwrap();
+        let mut storage = vec![];
+        game.get_concrete_moves(2, &mut storage).unwrap();
         assert_eq!(
             (0..DEFAULT_WIDTH as move_code)
                 .filter(|&c| c != 2)
-                .collect::<Vec<_>>()
-                .as_slice(),
-            &*storage
+                .collect::<Vec<_>>(),
+            MoveCode::slice_to_rust(&storage)
         );
 
         game.import_state(Some("#X")).unwrap();
-        game.get_concrete_moves(1, &mut storage.get_ptr_vec())
-            .unwrap();
-        assert_eq!([] as [move_code; 0], *storage);
+        let mut storage = vec![];
+        game.get_concrete_moves(1, &mut storage).unwrap();
+        assert_eq!(
+            [] as [move_code; 0],
+            MoveCode::slice_to_rust(&storage).as_ref()
+        );
     }
 
     #[test]
     fn is_legal_move() {
         let mut game = create_with_state("/OXOOXO/#o");
 
-        let err = game.is_legal_move(1, 0).unwrap_err().code;
+        let err = game.is_legal_move(1, sync(&0)).unwrap_err().code;
         assert_eq!(InvalidInput, err);
 
-        game.is_legal_move(2, 0).unwrap();
+        game.is_legal_move(2, sync(&0)).unwrap();
 
-        game.is_legal_move(2, 1).unwrap_err().code;
+        game.is_legal_move(2, sync(&1)).unwrap_err().code;
         assert_eq!(InvalidInput, err);
 
-        game.is_legal_move(2, DEFAULT_WIDTH.into())
+        game.is_legal_move(2, sync(&DEFAULT_WIDTH.into()))
             .unwrap_err()
             .code;
         assert_eq!(InvalidInput, err);
 
         game.import_state(Some("#X")).unwrap();
-        game.is_legal_move(2, 1).unwrap_err().code;
+        game.is_legal_move(2, sync(&1)).unwrap_err().code;
         assert_eq!(InvalidInput, err);
 
         game.import_state(Some("#-")).unwrap();
-        game.is_legal_move(2, 2).unwrap_err().code;
+        game.is_legal_move(2, sync(&2)).unwrap_err().code;
         assert_eq!(InvalidInput, err);
     }
 
@@ -1022,17 +991,17 @@ mod tests {
     fn make_move() {
         let mut game = create_with_state("/OOO/#x");
 
-        game.make_move(1, 0).unwrap();
-        game.make_move(2, 1).unwrap();
+        game.make_move(1, sync(&0)).unwrap();
+        game.make_move(2, sync(&1)).unwrap();
 
         let expected = "X/OOOO/////#O";
-        let mut storage = Storage::new(expected.len());
-        game.export_state(&mut storage.get_ptr_vec()).unwrap();
-        assert_eq!(expected, storage.as_str().unwrap());
+        let mut storage = ValidCString::default();
+        game.export_state(PLAYER_NONE, &mut storage).unwrap();
+        assert_eq!(expected, storage.as_ref());
 
         game.import_state(Some("XXXOOO/OOOXXX/XXXOOO/OOOXXX/XXXOO/OOOXXX/XXXOOO#o"))
             .unwrap();
-        game.make_move(2, 4).unwrap();
+        game.make_move(2, sync(&4)).unwrap();
         assert_eq!(GameResult::Draw, game.data.result);
     }
 
@@ -1040,16 +1009,18 @@ mod tests {
     fn get_results() {
         let mut game = create_with_state("/OXO/#x");
 
-        let mut storage = Storage::new(1);
-        game.get_results(&mut storage.get_ptr_vec()).unwrap();
+        let mut storage = vec![];
+        game.get_results(&mut storage).unwrap();
         assert_eq!([] as [player_id; 0], *storage);
 
         game.import_state(Some("OOOO#O")).unwrap();
-        game.get_results(&mut storage.get_ptr_vec()).unwrap();
+        let mut storage = vec![];
+        game.get_results(&mut storage).unwrap();
         assert_eq!([2], *storage);
 
         game.import_state(Some("#-")).unwrap();
-        game.get_results(&mut storage.get_ptr_vec()).unwrap();
+        let mut storage = vec![];
+        game.get_results(&mut storage).unwrap();
         assert_eq!([] as [player_id; 0], *storage);
     }
 
@@ -1057,10 +1028,10 @@ mod tests {
     fn get_move_code() {
         let mut game = create_default();
 
-        let mov = game.get_move_code(PLAYER_NONE, " 4 ").unwrap();
+        let mov = game.get_move_data(PLAYER_NONE, " 4 ").unwrap();
         assert_eq!(4, mov);
 
-        let err = game.get_move_code(PLAYER_NONE, "-3").unwrap_err().code;
+        let err = game.get_move_data(PLAYER_NONE, "-3").unwrap_err().code;
         assert_eq!(InvalidInput, err);
     }
 
@@ -1068,10 +1039,10 @@ mod tests {
     fn get_move_str() {
         let mut game = create_default();
 
-        let mut storage = Storage::new(1);
-        game.get_move_str(PLAYER_NONE, 3, &mut storage.get_ptr_vec())
+        let mut storage = ValidCString::default();
+        game.get_move_str(PLAYER_NONE, sync(&3), &mut storage)
             .unwrap();
-        assert_eq!("3", storage.as_str().unwrap());
+        assert_eq!("3", storage.as_ref());
     }
 
     #[test]
@@ -1087,14 +1058,14 @@ mod tests {
             "|X|O|X| |X| | |\n",
             " 0 1 2 3 4 5 6 \n",
         );
-        let mut storage = Storage::new(expected.len());
-        game.print(&mut storage.get_ptr_vec()).unwrap();
+        let mut storage = ValidCString::default();
+        game.print(PLAYER_NONE, &mut storage).unwrap();
 
-        assert_eq!(expected, storage.as_str().unwrap());
+        assert_eq!(expected, storage.as_ref());
     }
 
     fn create_default() -> ConnectFour {
-        ConnectFour::create(&GameInit::Default).unwrap().0
+        ConnectFour::create(&GameInit::Default).unwrap()
     }
 
     fn create_with_state(string: &str) -> ConnectFour {
@@ -1104,6 +1075,9 @@ mod tests {
             state: Some(string),
         })
         .unwrap()
-        .0
+    }
+
+    fn sync<M>(md: M) -> MoveDataSync<M> {
+        MoveDataSync::with_default(md)
     }
 }

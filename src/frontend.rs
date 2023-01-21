@@ -8,17 +8,17 @@ use std::{
 use mirabel::{
     cstr,
     error::{ErrorCode, Result},
-    event::{EventAny, EventEnum},
+    event::{EventAny, EventEnum, MoveData},
     frontend::{
         frontend_display_data, frontend_feature_flags,
         skia::{Color4f, Matrix, Paint, Rect},
         Context, FrontendMethods, GameInfo, Metadata,
     },
-    game::{player_id, semver, GameMethods},
+    game::{player_id, semver, GameMethods, SYNC_CTR_DEFAULT},
     game_init::GameInit,
     plugin_get_frontend_methods,
     sdl_event::{sdl_button_mask, SDLEventEnum, SDL_BUTTON_LEFT},
-    CodeResult, ValidCStr,
+    CodeResult, MoveDataSync, ValidCStr,
 };
 
 use crate::game::{
@@ -44,7 +44,6 @@ const DROP_HEIGHT: f32 = 1.2;
 const ANIMATION_SPEED: Duration = Duration::from_millis(500);
 
 /// Container for the state of the frontend.
-#[derive(Default)]
 struct Frontend {
     /// The currently running game if any.
     game: Option<Game>,
@@ -53,6 +52,8 @@ struct Frontend {
     animation: Option<Animation>,
     /// Is user input disabled?
     disabled: bool,
+    /// Keep track of the current sync counter.
+    sync_ctr: u64,
 }
 
 impl Frontend {
@@ -102,7 +103,13 @@ impl FrontendMethods for Frontend {
     type Options = ();
 
     fn create(_options: Option<&Self::Options>) -> Result<Self> {
-        Ok(Self::default())
+        Ok(Self {
+            game: Default::default(),
+            mouse: Default::default(),
+            animation: Default::default(),
+            disabled: Default::default(),
+            sync_ctr: SYNC_CTR_DEFAULT,
+        })
     }
 
     fn runtime_opts_display(&mut self, _ctx: Context<Self>) -> Result<()> {
@@ -126,7 +133,8 @@ impl FrontendMethods for Frontend {
             EventEnum::GameMove(e) => {
                 self.clear();
                 if let Some(ref mut g) = self.game {
-                    let column = e.code.try_into().unwrap();
+                    let MoveData::MoveCode(code) = e.data.md else { panic!("unexpected big move") };
+                    let column = code.try_into().expect("unexpectedly large move code");
                     if let Some(ref mut a) = self.animation {
                         if e.player == g.player_id() && a.target.0 == column {
                             a.started = true;
@@ -143,8 +151,12 @@ impl FrontendMethods for Frontend {
                         self.animation = Some(animation);
                     }
 
+                    // We can simply use the sync counter of this move event to
+                    // calculate the next one for our own move.
+                    self.sync_ctr = e.data.sync_ctr + 1;
                     self.disabled = true;
-                    g.make_move(e.player, e.code)?;
+                    // ConnectFour ignores the sync counter anyway.
+                    g.make_move(e.player, MoveDataSync::with_default(&code))?;
                 }
             }
             _ => (),
@@ -201,7 +213,10 @@ impl FrontendMethods for Frontend {
 
         ctx.outbox.push(&mut EventAny::new_game_move(
             game.player_id(),
-            column.into(),
+            MoveDataSync {
+                md: MoveData::MoveCode(column.into()),
+                sync_ctr: self.sync_ctr,
+            },
         ));
         self.disabled = true;
         self.animation = Some(Animation::new(
@@ -310,7 +325,7 @@ struct Game(ConnectFour);
 impl Game {
     /// Wrapper around [`ConnectFour::create()`].
     fn create(init_info: &GameInit) -> Result<Self> {
-        Ok(Self(ConnectFour::create(init_info)?.0))
+        Ok(Self(ConnectFour::create(init_info)?))
     }
 
     /// Wrapper around
