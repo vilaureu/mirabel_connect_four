@@ -313,12 +313,14 @@ impl Game {
         Ok(Self(ConnectFour::create(init_info)?.0))
     }
 
-    /// Wrapper around [`GameOptions::width()`].
+    /// Wrapper around
+    /// [`GameOptions::width()`](crate::game::GameOptions::width).
     fn width(&self) -> u8 {
         self.options().width()
     }
 
-    /// Wrapper around [`GameOptions::height()`].
+    /// Wrapper around
+    /// [`GameOptions::height()`](crate::game::GameOptions::height).
     fn height(&self) -> u8 {
         self.options().height()
     }
