@@ -14,7 +14,7 @@ mirabel = ["mirabel/mirabel", "mirabel/skia"]
 
 [dependencies.mirabel]
 git = "https://github.com/vilaureu/mirabel_rs"
-rev = "aae75608067ff8c97519c89c5b5f41cefeacde92"
+rev = "15b038154af764f67cfc3b0e1c5385cb2fa6d312"
 default-features = false
 
 [profile.release]

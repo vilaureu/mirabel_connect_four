@@ -250,7 +250,7 @@ dependencies = [
 [[package]]
 name = "mirabel"
 version = "0.1.0"
-source = "git+https://github.com/vilaureu/mirabel_rs?rev=aae75608067ff8c97519c89c5b5f41cefeacde92#aae75608067ff8c97519c89c5b5f41cefeacde92"
+source = "git+https://github.com/vilaureu/mirabel_rs?rev=15b038154af764f67cfc3b0e1c5385cb2fa6d312#15b038154af764f67cfc3b0e1c5385cb2fa6d312"
 dependencies = [
  "bindgen",
  "gl_generator",
