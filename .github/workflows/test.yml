@@ -47,8 +47,8 @@ jobs:
       - name: Get mirabel_rs revision
         id: mirabel_rs
         run: >-
-          echo "rev=$(cargo lock --sources --package mirabel_rs | sed -rn
-          's/^.+rev=([a-f0-9]+)#\1\)$/\1/p')" >> $GITHUB_OUTPUT
+          echo "rev=$(cargo lock --sources --package mirabel | sed -rn
+          's/^.+rev=([a-f0-9]+)#\1\)$/\1/p')" | tee -a -- "$GITHUB_OUTPUT"
       - name: Test
         timeout-minutes: 5
         run: cargo test --verbose
@@ -76,7 +76,7 @@ jobs:
       - name: Get surena commit
         id: get-surena
         # purge cache on submodule update
-        run: echo "commit=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+        run: echo "commit=$(git rev-parse HEAD)" | tee -a -- "$GITHUB_OUTPUT"
         working-directory: mirabel/lib/surena
       - uses: actions/cache@v3
         id: cache
